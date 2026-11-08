@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="mono">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vector — Face Lab</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="css/lab.css" />
+</head>
+<body class="lab-body">
+  <header class="lab-head">
+    <div>
+      <div class="lab-title">VECTOR // FACE LAB</div>
+      <div class="lab-sub">tune the pixels, then take them home</div>
+    </div>
+    <a class="ghost-btn" href="index.html">back to Vector</a>
+  </header>
+
+  <main class="lab-main">
+    <section class="lab-stage">
+      <div class="character-wrap lab-character-wrap" id="lab-character-wrap">
+        <div class="character-glow" id="lab-glow" aria-hidden="true"></div>
+        <canvas id="lab-character" width="256" height="256" aria-label="Character preview"></canvas>
+      </div>
+      <div class="lab-status" id="lab-status">neutral · idle</div>
+    </section>
+
+    <aside class="lab-panel">
+      <section class="lab-section">
+        <div class="section-title">Character</div>
+        <div class="lab-row">
+          <label class="field-label" for="lab-style">Style</label>
+          <select id="lab-style">
+            <option value="original">Original 12×12</option>
+            <option value="pixel">Refined 16×16</option>
+          </select>
+        </div>
+        <div class="lab-row">
+          <label class="field-label" for="lab-palette">Palette</label>
+          <select id="lab-palette">
+            <option value="mono">Mono</option>
+            <option value="mint">Mint</option>
+            <option value="paper">Paper</option>
+          </select>
+        </div>
+        <div class="lab-row">
+          <label class="field-label" for="lab-intensity">Intensity</label>
+          <input id="lab-intensity" type="range" min="0.2" max="1.4" step="0.05" value="1" />
+          <span class="range-value" id="lab-intensity-value">1.00</span>
+        </div>
+        <div class="lab-row">
+          <label class="field-label" for="lab-duration">Hold</label>
+          <input id="lab-duration" type="range" min="0" max="12000" step="500" value="4800" />
+          <span class="range-value" id="lab-duration-value">4.8s</span>
+        </div>
+      </section>
+
+      <section class="lab-section">
+        <div class="section-title">Emotion</div>
+        <div class="lab-grid" id="lab-emotions"></div>
+      </section>
+
+      <section class="lab-section">
+        <div class="section-title">State</div>
+        <div class="lab-chips" id="lab-states">
+          <button type="button" data-state="idle" class="choice active">idle</button>
+          <button type="button" data-state="listening" class="choice">listening</button>
+          <button type="button" data-state="thinking" class="choice">thinking</button>
+          <button type="button" data-state="speaking" class="choice">speaking</button>
+          <button type="button" data-state="sleeping" class="choice">sleeping</button>
+        </div>
+      </section>
+
+      <section class="lab-section">
+        <div class="section-title">Motion</div>
+        <div class="lab-toggles">
+          <label class="lab-check"><input id="lab-blink" type="checkbox" checked /> blink</label>
+          <label class="lab-check"><input id="lab-breathe" type="checkbox" checked /> breathe</label>
+          <label class="lab-check"><input id="lab-follow" type="checkbox" checked /> follow pointer</label>
+          <label class="lab-check"><input id="lab-particles" type="checkbox" /> particles</label>
+          <label class="lab-check"><input id="lab-antenna" type="checkbox" /> antenna</label>
+          <label class="lab-check"><input id="lab-reduced" type="checkbox" /> reduced motion</label>
+        </div>
+        <div class="lab-actions">
+          <button class="ghost-btn" id="lab-poke" type="button">poke</button>
+          <button class="ghost-btn" id="lab-wake" type="button">wake</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="js/lab.js"></script>
+</body>
+</html>

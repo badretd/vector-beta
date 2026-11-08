@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en" data-theme="mono">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <title>Vector</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v5a4 4 0 0 0 4 4Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M9 9v2a4 4 0 0 0 6 3.4M15 10V6a4 4 0 0 0-7.4-2M5 11a7 7 0 0 0 11 5.7M19 11a7 7 0 0 1-.6 2.8M12 18v4M8 22h8M3 3l18 18"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M9 7V5a3 3 0 0 1 6 0v2M3 13h4M17 13h4M4 8l3 2M20 8l-3 2M4 18l3-2M20 18l-3-2M12 11v9"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5M12 18h.01"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h4M18 14h.01"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  </svg>
+
+  <div class="app" id="app">
+    <main class="stage" id="stage">
+      <div class="corner top-left">
+        <button class="icon-btn mic-btn" id="mic-btn" type="button" aria-pressed="true" data-i18n-title="mic.on">
+          <span class="mic-dot" id="mic-dot"></span>
+          <svg class="icon-on"><use href="#i-mic"/></svg>
+          <svg class="icon-off"><use href="#i-mic-off"/></svg>
+        </button>
+      </div>
+
+      <div class="corner top-right">
+        <button class="text-btn" id="lang-btn" type="button" title="Language / Язык">EN</button>
+        <button class="icon-btn" id="history-btn" type="button" data-i18n-title="history.title"><svg><use href="#i-history"/></svg></button>
+        <button class="icon-btn" id="settings-btn" type="button" data-i18n-title="settings.title"><svg><use href="#i-gear"/></svg></button>
+      </div>
+
+      <section class="center" id="center">
+        <div class="character-wrap" id="character-wrap">
+          <div class="character-glow" id="character-glow" aria-hidden="true"></div>
+          <canvas id="character" width="256" height="256" aria-label="Vector's pixel face"></canvas>
+        </div>
+        <div class="character-meta">
+          <div class="status-line" id="status-line" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <div class="dock" id="dock">
+        <div class="hint" id="hint" role="status" aria-live="polite"></div>
+        <div class="text-stack" id="text-stack">
+          <div class="reply" id="reply" hidden aria-live="polite"></div>
+          <textarea id="input" rows="1" autocomplete="off" spellcheck="true" data-i18n-placeholder="stage.placeholder"></textarea>
+        </div>
+        <div class="dock-meta">
+          <div class="modes" id="mode" role="group" aria-label="Input mode">
+            <button type="button" data-mode="silence" data-i18n="mode.silence">silence</button>
+            <button type="button" data-mode="hotkey" data-i18n="mode.hotkey">hotkey</button>
+            <button type="button" data-mode="auto" data-i18n="mode.auto">auto</button>
+          </div>
+          <span class="pending" id="pending" hidden></span>
+          <span class="send-hint" id="send-hint"></span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="backdrop" id="backdrop" hidden></div>
+
+  <aside class="drawer" id="settings-drawer" hidden aria-label="Settings">
+    <header class="drawer-head">
+      <div>
+        <div class="drawer-title" data-i18n="settings.title">Settings</div>
+        <div class="drawer-sub" data-i18n="settings.sub">changes save automatically</div>
+      </div>
+      <button class="icon-btn" id="settings-close" type="button" data-i18n-title="reply.dismiss"><svg><use href="#i-x"/></svg></button>
+    </header>
+    <nav class="tabs" id="settings-tabs"></nav>
+    <div class="drawer-body" id="settings-body"></div>
+    <footer class="drawer-foot">
+      <button class="ghost-btn" id="settings-import" type="button" data-i18n="settings.advanced.import">Import</button>
+      <button class="ghost-btn" id="settings-export" type="button" data-i18n="settings.advanced.export">Export</button>
+      <button class="ghost-btn danger" id="settings-reset" type="button" data-i18n="settings.advanced.reset">Reset</button>
+      <span class="save-state" id="settings-save-state"></span>
+    </footer>
+  </aside>
+
+  <aside class="drawer history-drawer" id="history-drawer" hidden aria-label="Conversation">
+    <header class="drawer-head">
+      <div>
+        <div class="drawer-title" data-i18n="history.title">Conversation</div>
+        <div class="drawer-sub" data-i18n="history.sub">local & private</div>
+      </div>
+      <div class="head-actions">
+        <button class="icon-btn small" id="history-export" type="button" data-i18n-title="history.export"><svg><use href="#i-download"/></svg></button>
+        <button class="icon-btn small" id="history-clear" type="button" data-i18n-title="history.clear"><svg><use href="#i-trash"/></svg></button>
+        <button class="icon-btn" id="history-close" type="button" data-i18n-title="reply.dismiss"><svg><use href="#i-x"/></svg></button>
+      </div>
+    </header>
+    <div class="history-list" id="history-list"></div>
+    <div class="empty-state" id="history-empty" data-i18n="history.empty">Nothing here yet. Say something.</div>
+  </aside>
+
+  <div class="debug" id="debug-overlay" hidden>
+    <div class="debug-window">
+      <header class="debug-head">
+        <div class="debug-title"><span class="debug-dot"></span><span data-i18n="debug.title">VECTOR // DEBUG</span><span class="debug-version" id="debug-version"></span></div>
+        <div class="debug-actions">
+          <button class="ghost-btn" id="debug-refresh" type="button" data-i18n="debug.refresh">refresh</button>
+          <button class="ghost-btn" id="debug-copy" type="button" data-i18n="debug.copy">copy</button>
+          <button class="ghost-btn" id="debug-download" type="button" data-i18n="debug.download">download</button>
+          <button class="icon-btn" id="debug-close" type="button" data-i18n-title="reply.dismiss"><svg><use href="#i-x"/></svg></button>
+        </div>
+      </header>
+      <div class="debug-body">
+        <nav class="debug-tabs" id="debug-tabs"></nav>
+        <section class="debug-content" id="debug-content"></section>
+      </div>
+      <footer class="debug-foot" id="debug-foot">Ctrl+Shift+D</footer>
+    </div>
+  </div>
+
+  <div class="onboarding" id="onboarding" hidden>
+    <div class="onboard-panel" id="onboard-panel" data-step="1">
+      <div class="onboard-top">
+        <div class="onboard-step-count" id="onboard-step-count">01 / 03</div>
+      </div>
+
+      <section class="onboard-step" data-step="1">
+        <h1 data-i18n="onboarding.title">Hi. I'm Vector.</h1>
+        <p data-i18n="onboarding.text">A small program with a face...</p>
+        <div class="onboard-label" data-i18n="onboarding.language">Language</div>
+        <div class="choice-row" id="onboard-lang">
+          <button type="button" class="choice active" data-lang="en">English</button>
+          <button type="button" class="choice" data-lang="ru">Русский</button>
+        </div>
+      </section>
+
+      <section class="onboard-step" data-step="2" hidden>
+        <h2 data-i18n="onboarding.checks">Readiness</h2>
+        <div class="check-list" id="onboard-checks">
+          <div class="check-row" data-check="llm">
+            <span class="check-icon">…</span>
+            <div><b data-i18n="onboarding.llm">Local LLM</b><small data-i18n="onboarding.llmSub">Ollama connection</small></div>
+          </div>
+          <div class="check-row" data-check="asr">
+            <span class="check-icon">…</span>
+            <div><b data-i18n="onboarding.asr">Speech recognition</b><small data-i18n="onboarding.asrSub">Whisper + Silero VAD</small></div>
+          </div>
+          <div class="check-row" data-check="mic">
+            <span class="check-icon">…</span>
+            <div><b data-i18n="onboarding.mic">Microphone</b><small data-i18n="onboarding.micSub">Browser capture, local only</small></div>
+          </div>
+          <div class="check-row" data-check="privacy">
+            <span class="check-icon ok">✓</span>
+            <div><b data-i18n="onboarding.privacy">Private by default</b><small data-i18n="onboarding.privacySub">Everything stays on this machine</small></div>
+          </div>
+        </div>
+        <div class="onboard-links">
+          <button class="link-btn" id="onboard-retry" type="button" data-i18n="onboarding.retry">retry</button>
+          <button class="link-btn" id="onboard-demo" type="button" data-i18n="onboarding.demo">explore with the offline demo</button>
+        </div>
+      </section>
+
+      <section class="onboard-step" data-step="3" hidden>
+        <h2 data-i18n="onboarding.style">How should I look?</h2>
+        <div class="choice-row three" id="onboard-style">
+          <button type="button" class="choice style-choice active" data-face-style="original">
+            <span class="style-face">▪‿▪</span>
+            <b data-i18n="settings.character.original">Original 12×12</b>
+          </button>
+          <button type="button" class="choice style-choice" data-face-style="pixel">
+            <span class="style-face small">▪‿▪</span>
+            <b data-i18n="settings.character.pixel">Refined 16×16</b>
+          </button>
+        </div>
+        <div class="onboard-label" data-i18n="onboarding.theme">Room</div>
+        <div class="choice-row" id="onboard-theme">
+          <button type="button" class="choice theme-choice active" data-theme="mono"><i class="swatch mono"></i><span data-i18n="settings.character.mono">Mono</span></button>
+          <button type="button" class="choice theme-choice" data-theme="mint"><i class="swatch mint"></i><span data-i18n="settings.character.mint">Mint</span></button>
+          <button type="button" class="choice theme-choice" data-theme="paper"><i class="swatch paper"></i><span data-i18n="settings.character.paper">Paper</span></button>
+        </div>
+      </section>
+
+      <footer class="onboard-foot">
+        <button class="ghost-btn" id="onboard-skip" type="button" data-i18n="onboarding.skip">skip</button>
+        <div class="onboard-nav">
+          <button class="ghost-btn" id="onboard-back" type="button" data-i18n="onboarding.back" hidden>back</button>
+          <button class="primary-btn" id="onboard-next" type="button" data-i18n="onboarding.next">next</button>
+          <button class="primary-btn" id="onboard-start" type="button" data-i18n="onboarding.start" hidden>Enter the screen</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

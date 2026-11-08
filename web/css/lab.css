@@ -1,0 +1,160 @@
+.lab-body {
+  min-height: 100dvh;
+  height: auto;
+  overflow: auto;
+  padding: clamp(16px, 3vw, 36px);
+}
+
+.lab-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.lab-title {
+  font-size: 11px;
+  letter-spacing: .24em;
+  color: var(--accent);
+}
+
+.lab-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lab-main {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(360px, 440px);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.lab-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 60vh;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  position: sticky;
+  top: 20px;
+}
+
+.lab-character-wrap {
+  width: min(460px, 52vmin);
+  height: min(460px, 52vmin);
+}
+
+.lab-status {
+  font-size: 12px;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.lab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lab-section {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.lab-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.lab-row:last-child {
+  margin-bottom: 0;
+}
+
+.lab-row .field-label {
+  flex: 0 0 74px;
+}
+
+.lab-row select {
+  flex: 1;
+}
+
+.lab-row input[type="range"] {
+  flex: 1;
+}
+
+.lab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+  gap: 5px;
+}
+
+.lab-grid .choice {
+  padding: 7px 6px;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.lab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.lab-chips .choice {
+  padding: 6px 10px;
+  font-size: 10px;
+}
+
+.lab-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  margin-bottom: 14px;
+}
+
+.lab-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.lab-check input {
+  accent-color: var(--accent);
+}
+
+.lab-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .lab-main {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-stage {
+    position: static;
+    min-height: 46vh;
+  }
+
+  .lab-character-wrap {
+    width: min(360px, 62vmin);
+    height: min(360px, 62vmin);
+  }
+}
