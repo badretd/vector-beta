@@ -1,5 +1,7 @@
 # Vector 2
 
+**English** · [Русский](README.ru.md)
+
 **Vector** is a local voice companion with a tiny animated pixel face. It listens through your microphone, transcribes speech locally with Whisper, streams replies from a local LLM through Ollama, and reacts with facial animations. It **never speaks aloud** — no text-to-speech, no audio replies. Vector types.
 
 The interface is deliberately one screen: a centered face, one line of text at the bottom, and a few almost-invisible controls in the corners. The default character is the original **12×12 white-on-black sprite**, now alive with blinking, gaze, breathing, and mouth movement. A refined **16×16** variant is available in Settings.
@@ -18,48 +20,203 @@ The interface is deliberately one screen: a centered face, one line of text at t
 - **Local and private.** Audio and text stay on this machine. Whisper, Silero VAD, and Ollama run locally. Only the one-time model download touches the network.
 - **No TTS.** The only sounds are tiny optional synthesized UI blips (mic, send, receive, error) — never speech.
 
-## Requirements
+## What you need
 
-- **Python 3.11–3.13** (3.12 recommended; 3.14 may lack wheels for some ML packages).
-- **Ollama** running locally — <https://ollama.com/download>.
-- **A Chromium-based browser** (Chrome, Chromium, Brave, Edge) for the app-window mode. Firefox works in a normal tab.
-- A microphone.
-- About 1 GB of free disk space for the default Whisper model, plus your LLM.
+You do not need to be a programmer. You will copy a few commands into a terminal, and the setup wizard will do the rest.
+
+| What | Why you need it | How to check |
+| --- | --- | --- |
+| **Python 3.11–3.13** (3.12 recommended) | Runs Vector's local server | `python3 --version` on macOS/Linux, `py --version` on Windows |
+| **Ollama** | Runs the language model on your computer | `ollama --version` |
+| **About 4 GB of free disk space** | ~0.5 GB speech model + ~2 GB language model + Python packages | — |
+| **A microphone** | Vector listens to you | — |
+| **Chrome, Chromium, Brave, or Edge** | Optional: opens Vector in a clean app window | — |
+
+Python 3.14 may not yet have ready-made packages for some speech libraries, so install **3.12** if you can choose.
 
 You do **not** need PortAudio or any native audio library: the browser captures the microphone and sends 16 kHz PCM to the local server.
 
-## Quick start
+---
 
-### 1. Pull a local model
+## Installation, step by step
 
-Small multilingual models work best with a 4k context:
+The whole installation takes about **10–20 minutes**, mostly waiting for downloads. Do the steps in order. If a command is not recognised, see [If installation goes wrong](#if-installation-goes-wrong).
+
+### Step 1 — Install Python 3.12
+
+**Windows**
+
+1. Open <https://www.python.org/downloads/>.
+2. Download **Python 3.12.x** for Windows.
+3. Run the installer. On the first screen, tick **“Add python.exe to PATH”**, then click **Install Now**.
+4. Open a terminal: press `Win+R`, type `cmd`, press Enter.
+5. Check the version:
+
+   ```bat
+   py -3.12 --version
+   ```
+
+   You should see something like `Python 3.12.10`. If you see Python 3.14 or “not found”, install 3.12 from the link above.
+
+**macOS**
+
+1. Download the macOS installer from <https://www.python.org/downloads/macos/> and run it, **or** use Homebrew:
+
+   ```bash
+   brew install python@3.12
+   ```
+
+2. Open **Terminal** (Applications → Utilities → Terminal) and check:
+
+   ```bash
+   python3.12 --version
+   ```
+
+**Linux (Ubuntu / Debian)**
+
+```bash
+sudo apt update
+sudo apt install python3.12 python3.12-venv
+python3.12 --version
+```
+
+On Fedora use `sudo dnf install python3.12`. Package names may differ slightly on other distributions.
+
+> **Checkpoint:** the version command prints `Python 3.12.x` (3.11 or 3.13 is also fine).
+
+### Step 2 — Install and start Ollama
+
+1. Download Ollama from <https://ollama.com/download> and install it.
+   - **Windows / macOS:** run the installer and open the Ollama app once. It keeps running in the background.
+   - **Linux:** follow the install command on the same page, or use:
+
+     ```bash
+     curl -fsSL https://ollama.com/install.sh | sh
+     ```
+
+2. Close and reopen your terminal, then check:
+
+   ```bash
+   ollama --version
+   ```
+
+3. Make sure Ollama is running. On Windows/macOS the Ollama icon should be in the tray/menu bar. On Linux, if the command below fails, start it manually:
+
+   ```bash
+   ollama serve
+   ```
+
+   Leave that terminal window open while using Vector.
+
+> **Checkpoint:** `ollama --version` prints a version, and <http://127.0.0.1:11434> responds (it is normal if the page itself is empty or says “Ollama is running”).
+
+### Step 3 — Download Vector
+
+You need the project folder on your computer. Choose **one** option.
+
+**Option A — with Git (recommended if you have it)**
+
+```bash
+git clone https://github.com/badretd/vector-beta.git
+cd vector-beta
+```
+
+**Option B — without Git**
+
+1. Open <https://github.com/badretd/vector-beta>.
+2. Click **Code → Download ZIP**.
+3. Unpack the archive.
+4. Open a terminal **inside the unpacked `vector-beta` folder** (on Windows: open the folder, right-click empty space → “Open in Terminal”; on macOS: right-click the folder → Services → “New Terminal at Folder”).
+
+> **Checkpoint:** the terminal is inside the folder that contains `run.sh`, `requirements.txt`, and the `vector` directory.
+
+### Step 4 — Download the language model
+
+This is the “brain” Vector will talk to. Run:
 
 ```bash
 ollama pull qwen2.5:3b
-# or: ollama pull llama3.2:3b
-# or: ollama pull phi3:mini
 ```
 
-The default model is `qwen2.5:3b`. You can change it in **Settings → Advanced**.
+The download is about **2 GB** and happens only once. A progress bar is shown.
 
-### 2. Start Vector
+Other good small models:
+
+```bash
+ollama pull llama3.2:3b
+# or
+ollama pull phi3:mini
+```
+
+The default is `qwen2.5:3b`; you can change it later in **Settings → Advanced**.
+
+> **Checkpoint:** `ollama list` shows the model you just downloaded.
+
+### Step 5 — Start Vector
+
+**macOS / Linux**
+
+In the project folder, run:
 
 ```bash
 ./run.sh
 ```
 
-The script creates `.venv`, installs `requirements.txt` on first run, starts the local server, and opens a Chrome app window at `http://127.0.0.1:8765/`.
+The first launch creates a private Python environment (`.venv`) and installs the dependencies. This takes a few minutes. **Do not close the terminal while it works.**
 
-Manual alternative:
+If you see `Permission denied`, make the script executable once and run it again:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
+chmod +x run.sh
+./run.sh
+```
+
+**Windows**
+
+`run.sh` is a macOS/Linux script, so on Windows use these commands in the project folder (Command Prompt or PowerShell):
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 python -m vector
 ```
 
-Useful flags:
+The first launch installs the dependencies and takes a few minutes. If PowerShell refuses to activate the environment, use **Command Prompt (`cmd`)** instead.
+
+**What should happen:** after a short wait, a terminal banner appears and a browser window opens at <http://127.0.0.1:8765/>. If no window opens, open that address manually in Chrome.
+
+**Manual method** (any OS, if you prefer not to use `run.sh`):
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python -m vector
+```
+
+To stop Vector, return to the terminal and press `Ctrl+C`. To start it again later, run the same start command — the dependencies are already installed.
+
+### Step 6 — Complete the first-run wizard
+
+On the first launch Vector shows a short setup screen:
+
+1. **Language** — choose English or Русский.
+2. **Readiness** — Vector checks three things:
+   - **Local LLM** — Ollama is running and reachable;
+   - **Speech recognition** — Whisper is loading;
+   - **Microphone** — the browser can see an input device.
+3. **How should I look?** — pick **Original 12×12** (default) or **Refined 16×16**, and a room theme: **Mono**, **Mint**, or **Paper**.
+
+The speech model downloads on first use into `data/models/whisper/`. The default `small` model is about **466 MB**, so the first check may take a few minutes and needs an internet connection. Progress is shown on the readiness screen and in the debug console.
+
+If the LLM check fails and you just want to look around, click **“explore with the offline demo”** — no Ollama is needed for the demo.
+
+When the microphone check is green, allow microphone access in the browser if it asks. Everything is processed locally.
+
+> **Done.** Click a reply to dismiss it, press `F9` or click the background to start listening, and simply talk or type.
+
+### Other launch options
 
 ```bash
 python -m vector --no-browser          # print the URL only
@@ -69,11 +226,22 @@ python -m vector --demo                # offline demo companion (no Ollama)
 python -m vector --data-dir ./profile  # separate settings/history
 ```
 
-### 3. First run
+### Updating Vector
 
-The onboarding overlay checks Ollama and the speech model, lets you choose English/Русский, and asks how Vector should look. The default is **Original 12×12** in the **Mono** room. You can also choose the offline demo.
+```bash
+git pull
+./run.sh
+```
 
-Whisper downloads on first use into `data/models/whisper/`. The default is `small` (~466 MB). A progress/loading state is shown in the readiness checks and the debug console.
+If startup fails after an update, reinstall the dependencies:
+
+```bash
+# macOS / Linux
+.venv/bin/python -m pip install -r requirements.txt
+
+# Windows
+.venv\Scripts\python -m pip install -r requirements.txt
+```
 
 ## Controls
 
@@ -222,9 +390,31 @@ pytest -q
 
 The suite covers the streaming emotion parser, aliases, auto-send scoring in both languages, config merging/validation, memory extraction, prompt compactness, ASR endpointing with a fake engine, and dialogue modes. Set `VECTOR_TEST_ASR=1` to run the real Whisper load test.
 
-## Troubleshooting
+## If installation goes wrong
 
-**“Ollama is not reachable”** — start Ollama (`ollama serve`), check `curl http://127.0.0.1:11434/api/tags`, and make sure the selected model is pulled. Or enable **Offline demo** in Advanced.
+**`python3` / `python` / `py` is not recognised** — Python is not installed or not added to PATH. Reinstall Python 3.12 and tick “Add python.exe to PATH” on Windows. On macOS/Linux, call it as `python3.12`.
+
+**`./run.sh: Permission denied`** — run `chmod +x run.sh` once, then try again.
+
+**`ollama: command not found`** — Ollama is not installed, or the terminal was opened before installation. Close and reopen the terminal. If needed, restart the computer.
+
+**`Ollama is not reachable`** — make sure Ollama is running (`ollama serve` on Linux), then test:
+
+```bash
+curl http://127.0.0.1:11434/api/tags
+```
+
+Also check that the model from Step 4 is pulled, or enable **Offline demo** in Advanced.
+
+**The browser does not open** — open <http://127.0.0.1:8765/> manually. The terminal must stay open; closing it stops Vector.
+
+**`No module named vector`** — the command was run outside the project folder. `cd` into the folder that contains `run.sh` and try again.
+
+**A download takes forever** — the first run downloads Python packages, a ~2 GB language model, and a ~466 MB speech model. A stable connection is needed only for these one-time downloads. After that Vector works offline.
+
+**The microphone check is red** — allow microphone access in the browser, close other apps that may be using the microphone, and use `http://127.0.0.1:8765/` rather than a network address.
+
+## Troubleshooting
 
 **“Speech model failed to load”** — check `data/logs/vector.log` and the debug ASR tab. Text input still works. Try `device: cpu`, `compute_type: int8`, or a smaller model. The first download needs network access.
 
