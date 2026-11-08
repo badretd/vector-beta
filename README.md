@@ -119,7 +119,7 @@ The face also has internal states (`listening`, `thinking`, `speaking`, `sleepin
 
 ## Character
 
-The default character is the original **12×12** pixel face: two eyes and a mouth, drawn from the same geometry as `emotions/Happy.png` and friends. It supports:
+The default character is the original **12×12** pixel face: two eyes and a mouth, drawn from the same geometry as `examples/Happy.png` and friends. It supports:
 
 - Random blinking, occasional double-blinks
 - Pointer-following eyes and idle saccades

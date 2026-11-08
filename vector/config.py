@@ -23,7 +23,7 @@ SETTINGS_PATH = DATA_DIR / "settings.json"
 HISTORY_PATH = DATA_DIR / "history.json"
 LOG_DIR = DATA_DIR / "logs"
 
-# The default face is a tiny mint-on-ink pixel sprite. The palette is kept
+# The default face is a tiny white-on-black pixel sprite. The palette is kept
 # separate from the UI theme so a paper room can have a mint face, or a mint
 # room can have a cream face.
 DEFAULT_PALETTE = {
