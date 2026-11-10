@@ -311,12 +311,14 @@ Existing users are shown the pack chooser once after upgrading, so an old preset
 
 The **Face Lab** (`Settings → Character → Open face lab`, or `/lab.html`) shows every skin, emotion, state, palette, size, and motion toggle. It is the fastest way to tune the character.
 
+The lab also exposes **smart separation** with `inset`, `gap`, `trim`, and `off` modes plus a collision overlay. The default `inset` mode pulls the offending mouth edge back by about two screen pixels, so it never overlaps the eyes; the eyes keep their full pixels. `gap` and `trim` remain available for comparison.
+
 ## Settings
 
 Everything lives in `data/settings.json` and saves automatically.
 
 - **Voice** — interface language, Whisper model, recognition language, microphone, silence before send, mic sensitivity, live partials.
-- **Character** — character pack, custom pack fields, room theme, face palette, size, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
+- **Character** — character pack, custom pack fields, room theme, face palette, size, smart separation, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
 - **Companion** — name override, reply language, reply length, turn-taking mode, idle nudges, mood, memory facts.
 - **Advanced** — Ollama URL and model, temperature, context, max tokens, ASR device/precision, log level, offline demo, import/export/reset.
 

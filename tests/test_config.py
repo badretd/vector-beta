@@ -55,6 +55,21 @@ def test_unknown_appearance_styles_fall_back():
     assert clean["face"]["palette_name"] == "mono"
 
 
+def test_face_separation_defaults_to_inset():
+    assert DEFAULTS["face"]["separation"] == "inset"
+
+
+def test_face_separation_is_sanitized():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["face"]["separation"] = "nonsense"
+    assert sanitize(settings)["face"]["separation"] == "inset"
+    settings["face"]["separation"] = "auto"
+    assert sanitize(settings)["face"]["separation"] == "inset"
+    for mode in ("inset", "gap", "trim", "off"):
+        settings["face"]["separation"] = mode
+        assert sanitize(settings)["face"]["separation"] == mode
+
+
 def test_old_minimal_face_style_migrates_to_original():
     settings = copy.deepcopy(DEFAULTS)
     settings["face"]["style"] = "minimal"

@@ -50,8 +50,9 @@
 }
 
 .lab-character-wrap {
-  width: min(460px, 52vmin);
-  height: min(460px, 52vmin);
+  width: min(460px, 100%);
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .lab-status {

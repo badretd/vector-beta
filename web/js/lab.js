@@ -8,12 +8,14 @@ const status = $("lab-status");
 const character = new Character(canvas, {
   skin: "vector12",
   paletteName: "mono",
+  separation: "inset",
   eyeTracking: true,
   blink: true,
   breathing: true,
   particles: false,
   glow: false,
   antenna: false,
+  debugCollision: false,
 });
 
 let emotion = "happy";
@@ -33,6 +35,17 @@ if (params.get("palette") && ["mono", "mint", "paper"].includes(params.get("pale
   character.setPalette(params.get("palette"));
   $("lab-palette").value = params.get("palette");
 }
+if (params.get("separation")) {
+  const requested = params.get("separation") === "auto" ? "inset" : params.get("separation");
+  if (["inset", "gap", "trim", "off"].includes(requested)) {
+    character.setSeparation(requested);
+    $("lab-separation").value = requested;
+  }
+}
+if (params.get("reduced") === "1") {
+  character.setOptions({ reducedMotion: true });
+  $("lab-reduced").checked = true;
+}
 if (params.get("emotion") && EMOTIONS[params.get("emotion")]) {
   emotion = params.get("emotion");
 }
@@ -42,7 +55,7 @@ if (params.get("state") && ["idle", "listening", "thinking", "speaking", "sleepi
 
 function refreshStatus() {
   const palette = document.documentElement.dataset.theme || "mono";
-  status.textContent = `${EMOTIONS[emotion]?.en || emotion} · ${character.state} · ${character.skin} · ${palette}`;
+  status.textContent = `${EMOTIONS[emotion]?.en || emotion} · ${character.state} · ${character.skin} · ${palette} · separation: ${character.separation}`;
 }
 
 character.onEmotion = (id, meta) => {
@@ -68,7 +81,7 @@ for (const [id, meta] of Object.entries(EMOTIONS)) {
   grid.appendChild(button);
 }
 
-if (emotion !== "neutral") {
+if (EMOTIONS[emotion]) {
   grid.querySelectorAll("button").forEach((node) => {
     node.classList.toggle("active", node.textContent === emotion);
   });
@@ -93,6 +106,13 @@ $("lab-skin").addEventListener("change", (event) => {
 $("lab-palette").addEventListener("change", (event) => {
   character.setPalette(event.target.value);
   refreshStatus();
+});
+$("lab-separation").addEventListener("change", (event) => {
+  character.setSeparation(event.target.value);
+  refreshStatus();
+});
+$("lab-collisions").addEventListener("change", (event) => {
+  character.setOptions({ debugCollision: event.target.checked });
 });
 
 // Intensity / duration

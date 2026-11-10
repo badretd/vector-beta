@@ -223,6 +223,7 @@ function applySettings(settings, options = {}) {
     const skin = settings.face?.skin
       || (settings.face?.style === "pixel" ? "lumen16" : "vector12");
     app.character.setSkin(skin);
+    app.character.setSeparation(settings.face?.separation || "inset");
     app.character.setPalette(settings.face.palette_name, settings.face.palette || {});
     app.character.setOptions({
       eyeTracking: Boolean(settings.face.eye_tracking),
@@ -993,7 +994,7 @@ function renderPackPreview(canvas, pack) {
   canvas.style.pointerEvents = "none";
   const preview = new Character(canvas, {
     skin: pack.skin,
-    paletteName: pack.palette,
+    paletteName: app.settings?.face?.palette_name || pack.palette || "mono",
     eyeTracking: false,
     blink: false,
     breathing: false,
@@ -1381,6 +1382,7 @@ function bindEvents() {
       app: { theme: button.dataset.theme },
       face: { palette_name: button.dataset.theme, palette: null },
     });
+    renderPackChoices();
     updateOnboardSelections();
   });
   dom.onboardNext.addEventListener("click", () => {
@@ -1417,6 +1419,7 @@ async function init() {
   app.character = new Character(dom.character, {
     skin: "vector12",
     paletteName: "mono",
+    separation: "inset",
     eyeTracking: true,
     blink: true,
     breathing: true,

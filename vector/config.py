@@ -135,6 +135,7 @@ DEFAULTS: dict[str, Any] = {
         "palette_name": "mono",
         "palette": {},
         "scale": 1.0,
+        "separation": "inset",
         "eye_tracking": True,
         "blink": True,
         "breathing": True,
@@ -285,6 +286,12 @@ def sanitize(settings: dict[str, Any]) -> dict[str, Any]:
         s["input"]["auto"]["threshold"] = int(_clamp(int(s["input"]["auto"]["threshold"]), 1, 10))
         s["input"]["auto"]["force_after_ms"] = int(_clamp(int(s["input"]["auto"]["force_after_ms"]), 500, 30000))
         s["face"]["scale"] = _clamp(float(s["face"]["scale"]), 0.6, 1.8)
+        if s["face"].get("separation") == "auto":
+            # The old "auto" meant a whole-cell gap. It now means the softer
+            # edge inset, so existing settings migrate without a version bump.
+            s["face"]["separation"] = "inset"
+        if s["face"].get("separation") not in ("inset", "gap", "trim", "off"):
+            s["face"]["separation"] = "inset"
         s["engagement"]["idle_min_seconds"] = int(_clamp(int(s["engagement"]["idle_min_seconds"]), 20, 3600))
         s["engagement"]["sleep_after_minutes"] = int(_clamp(int(s["engagement"]["sleep_after_minutes"]), 1, 120))
         for key in ("affection", "curiosity", "energy"):

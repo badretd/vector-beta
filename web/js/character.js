@@ -103,6 +103,13 @@ const smooth = (current, target, dt, speed = 9) => lerp(current, target, clamp(d
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+const SEPARATION_MODES = ["inset", "gap", "trim", "off"];
+// "auto" is the pre-inset value; keep it as a safe alias for old settings.
+const normalizeSeparation = (mode) => {
+  if (mode === "auto") return "inset";
+  return SEPARATION_MODES.includes(mode) ? mode : "inset";
+};
+
 function canonical(name) {
   const key = String(name || "").trim().toLowerCase();
   return ALIASES[key] || (PRESETS[key] ? key : null);
@@ -116,6 +123,11 @@ export class Character {
     this.skin = SKINS[requestedSkin] ? requestedSkin : "vector12";
     this.grid = SKINS[this.skin].grid;
     this.cell = 16;
+    this.separation = normalizeSeparation(options.separation);
+    this._eyeCells = [];
+    this._mouthCells = [];
+    this._collisionCells = [];
+    this._record = null;
     this.palette = { ...PALETTES[options.paletteName || "mono"], ...(options.palette || {}) };
     this.opts = {
       eyeTracking: true,
@@ -185,6 +197,10 @@ export class Character {
     this.skin = next;
     this.grid = SKINS[next].grid;
     this._resizeCanvas();
+  }
+
+  setSeparation(mode) {
+    this.separation = normalizeSeparation(mode);
   }
 
   // Kept for older callers and the ?style= lab links.
@@ -462,6 +478,8 @@ export class Character {
     else if (this.skin === "moss14") this.drawMoss();
     else this.drawLumen();
 
+    if (this.opts.debugCollision) this.drawCollisionOverlay();
+
     ctx.restore();
 
     this.drawParticles();
@@ -473,7 +491,6 @@ export class Character {
   drawLumen() {
     this.drawAntenna();
     this.drawEyes(16);
-    this.drawBrows();
     this.drawMouth(16);
     this.drawBlush(16);
     this.drawTears(16);
@@ -486,17 +503,23 @@ export class Character {
     this.drawQuestion();
     this.drawExclaim();
     this.drawDots();
+    this.separate();
+    this.drawBrows();
   }
 
   drawVector12() {
     // The original 12×12 sprite is deliberately spare: two eyes and a mouth.
     // Keep it that way. The animation lives in the gaze, blink, and mouth.
     if (this.emotion === "laugh" && this.state !== "speaking") {
+      this._eyeCells = [];
+      this._mouthCells = [];
+      this._collisionCells = [];
       this.drawOriginalLaugh();
       return;
     }
     this.drawEyes(12);
     this.drawOriginalMouth();
+    this.separate();
   }
 
   drawMoss() {
@@ -505,6 +528,7 @@ export class Character {
     this.drawMossBezel();
     this.drawMossScanline();
     this.drawMossLed();
+    this.drawMossEyes();
     this.drawMossMouth();
     this.drawMossBlush();
     this.drawTears(14);
@@ -515,7 +539,7 @@ export class Character {
     this.drawQuestion();
     this.drawExclaim();
     this.drawDots();
-    this.drawMossEyes();
+    this.separate();
     this.drawMossBrows();
   }
 
@@ -535,12 +559,11 @@ export class Character {
   }
 
   drawMossScanline() {
-    if (this.opts.reducedMotion) {
-      this.px(3, 7, 8, 1, this.palette.ink, 0.03);
-      return;
-    }
+    // A slow moving phosphor sweep. Skip it entirely under reduced motion: a
+    // frozen bar across the face reads as a moustache, not a scanline.
+    if (this.opts.reducedMotion) return;
     const y = 2 + Math.floor(((this.t * 1.4) % 9));
-    this.px(3, y, 8, 1, this.palette.ink, 0.045);
+    this.px(3, y, 8, 1, this.palette.ink, 0.035);
   }
 
   drawMossLed() {
@@ -551,6 +574,10 @@ export class Character {
   }
 
   drawMossEyes() {
+    this._runShape("eye", () => this._drawMossEyesBody());
+  }
+
+  _drawMossEyesBody() {
     const p = this.params;
     const open = clamp(p.eyeOpen * (1 - this.blink), 0, 1.6);
     const lookX = Math.round(clamp(this.look.x, -1, 1));
@@ -561,39 +588,43 @@ export class Character {
 
     const drawOne = (x, y, side) => {
       if (shape === "heart") {
-        this.smallHeart(x - 1, y - 1, this.palette.blush, 0.95);
+        this.smallHeart(x, y - 1, this.palette.blush, 0.95);
         return;
       }
       if (shape === "x") {
-        for (let i = -1; i <= 2; i++) {
-          this.px(x + i, y + i - 1, 1, 1, ink);
+        for (let i = 0; i < 3; i++) {
+          this.px(x + i, y + i, 1, 1, ink);
           this.px(x + i, y + 2 - i, 1, 1, ink);
         }
         return;
       }
       if (shape === "happy") {
-        this.px(x, y + 1, 2, 1, ink);
-        this.px(x - 1, y, 1, 1, ink, 0.9);
-        this.px(x + 2, y, 1, 1, ink, 0.9);
+        // A three-cell caret, not a wide band that could read as a brow.
+        this.px(x, y + 1, 1, 1, ink, 0.95);
+        this.px(x + 1, y, 1, 1, ink, 0.95);
+        this.px(x + 2, y + 1, 1, 1, ink, 0.95);
         return;
       }
       if (shape === "wink" && side === "right") {
-        this.px(x, y + 1, 2, 1, ink, 0.95);
+        this.px(x, y + 1, 3, 1, ink, 0.95);
         return;
       }
       if (shape === "half" || shape === "squint" || open < 0.32 || this.state === "sleeping") {
-        this.px(x, y + 1, 2, 1, ink, 0.95);
+        this.px(x, y + 1, 3, 1, ink, 0.95);
         return;
       }
+      // A 3×2 phosphor socket with a single pupil cell. It stays readable as a
+      // terminal eye at this scale, while leaving room to look around.
       const h = open > 1.25 ? 3 : 2;
       const top = open > 1.25 ? y - 1 : y;
-      this.px(x, top, 2, h, ink, 0.96);
-      const py = top + (h > 2 ? 1 : 0) + (lookY > 0 ? 1 : 0);
-      this.px(x + (lookX > 0 ? 1 : 0), clamp(py, top, top + h - 1), 1, 1, pupil, 0.96);
-      this.px(x, top, 1, 1, "#ffffff", 0.22);
+      this.px(x, top, 3, h, ink, 0.96);
+      const lookShift = lookX > 0 ? 1 : lookX < 0 ? -1 : 0;
+      const pupilX = clamp(x + 1 + lookShift, x, x + 2);
+      const pupilY = clamp(top + (h > 2 ? 1 : 0) + (lookY > 0 ? 1 : 0), top, top + h - 1);
+      this.px(pupilX, pupilY, 1, 1, pupil, 0.96);
     };
 
-    drawOne(4, 4, "left");
+    drawOne(3, 4, "left");
     drawOne(8, 4, "right");
   }
 
@@ -616,6 +647,10 @@ export class Character {
   }
 
   drawMossMouth() {
+    this._runShape("mouth", () => this._drawMossMouthBody());
+  }
+
+  _drawMossMouthBody() {
     const p = this.params;
     const cx = 7;
     const cy = 9;
@@ -630,23 +665,22 @@ export class Character {
       return;
     }
 
-    const curve = p.mouth * 1.2;
+    // A dead zone keeps neutral and thinking flat; happy lifts the corners by
+    // one cell and sad/angry turn the line into a shallow frown.
+    const raw = p.mouth;
+    const curve = Math.abs(raw) < 0.45 ? 0 : (raw - Math.sign(raw) * 0.45) * 1.4;
     for (let x = cx - half; x <= cx + half; x++) {
       const f = 1 - Math.pow((x - cx) / half, 2);
       this.px(x, Math.round(cy + curve * f), 1, 1, color, 0.92);
-    }
-    if (p.mouth > 0.45) {
-      this.px(cx - half - 1, cy - 1, 1, 1, color, 0.5);
-      this.px(cx + half + 1, cy - 1, 1, 1, color, 0.5);
     }
   }
 
   drawMossBlush() {
     const p = this.params;
-    if (p.blush < 0.05) return;
+    if (p.blush < 0.15) return;
     const a = p.blush;
-    this.px(2, 8, 2, 1, this.palette.blush, 0.32 * a);
-    this.px(10, 8, 2, 1, this.palette.blush, 0.32 * a);
+    this.px(2, 8, 1, 1, this.palette.blush, 0.26 * a);
+    this.px(11, 8, 1, 1, this.palette.blush, 0.26 * a);
   }
 
   drawConstellation() {
@@ -670,6 +704,10 @@ export class Character {
   }
 
   drawOriginalMouth() {
+    this._runShape("mouth", () => this._drawOriginalMouthBody());
+  }
+
+  _drawOriginalMouthBody() {
     const p = this.params;
     const e = this.emotion;
     const open = clamp(p.mouthOpen, 0, 1);
@@ -751,6 +789,182 @@ export class Character {
     ctx.fillStyle = color;
     ctx.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
     ctx.globalAlpha = 1;
+    if (this._record) {
+      const rx = Math.round(x);
+      const ry = Math.round(y);
+      const rw = Math.max(1, Math.round(w));
+      const rh = Math.max(1, Math.round(h));
+      const cells = this._record === "eye" ? this._eyeCells : this._mouthCells;
+      for (let cy = ry; cy < ry + rh; cy++) {
+        for (let cx = rx; cx < rx + rw; cx++) cells.push([cx, cy]);
+      }
+    }
+  }
+
+  // -- smart separation --------------------------------------------------
+
+  separate() {
+    const offending = this._collisions(this._eyeCells, this._mouthCells);
+    this._collisionCells = offending;
+    if (!offending.length) return;
+    const mode = this.separation;
+    if (mode === "off") return;
+    if (mode === "inset") {
+      this._insetEdges(offending);
+      return;
+    }
+    if (mode === "trim") {
+      this._clearCells(offending);
+    } else {
+      this._clearCells(this._haloCells(this._eyeCells));
+    }
+    this._redrawEyes();
+  }
+
+  _collisions(eyes, mouth) {
+    const offending = [];
+    if (!eyes.length || !mouth.length) return offending;
+    const eyeSet = new Set(eyes.map(([x, y]) => `${x},${y}`));
+    for (const [x, y] of mouth) {
+      let hit = false;
+      for (let dy = -1; dy <= 1 && !hit; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (eyeSet.has(`${x + dx},${y + dy}`)) {
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) offending.push([x, y]);
+    }
+    return offending;
+  }
+
+  _runShape(record, draw) {
+    const cells = record === "eye" ? this._eyeCells : this._mouthCells;
+    cells.length = 0;
+    this._record = record;
+    try {
+      draw();
+    } finally {
+      this._record = null;
+    }
+  }
+
+  _seamPixels() {
+    const backing = this.canvas.width || 1;
+    const css = this.canvas.clientWidth || backing;
+    const scale = css / backing;
+    // Roughly two CSS pixels, snapped to whole backing pixels.
+    return clamp(Math.round(2 / Math.max(scale, 0.2)), 1, 6);
+  }
+
+  _insetEdges(offending) {
+    const eyes = this._eyeCells;
+    if (!eyes.length) return;
+    const eyeSet = new Set(eyes.map(([x, y]) => `${x},${y}`));
+    const band = this._seamPixels();
+    const overlaps = [];
+
+    for (const [mx, my] of offending) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) {
+            // A mouth pixel drawn in the same cell as an eye pixel is a true
+            // overlap. Remove that mouth pixel and let the eye keep the cell.
+            overlaps.push([mx, my]);
+            continue;
+          }
+          const ex = mx + dx;
+          const ey = my + dy;
+          if (!eyeSet.has(`${ex},${ey}`)) continue;
+          // Only the mouth yields. The eyes are the most important pixels on
+          // the face, so never shave them; pull the facing mouth edge back.
+          if (dx === 0) {
+            this._clearBand(mx, my, dy > 0 ? "bottom" : "top", band);
+          } else if (dy === 0) {
+            this._clearBand(mx, my, dx > 0 ? "right" : "left", band);
+          } else {
+            this._clearCorner(mx, my, dx, dy, band);
+          }
+        }
+      }
+    }
+
+    if (overlaps.length) {
+      // Clear the eye cells first so the redraw does not stack alpha on top of
+      // the existing eye pixels; then let the eye keep the contested cell.
+      this._clearCells(this._eyeCells);
+      this._redrawEyes();
+    }
+  }
+
+  _clearCorner(x, y, towardX, towardY, px) {
+    const t = px / this.cell;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000000";
+    const x0 = towardX > 0 ? x + 1 - t : x;
+    const y0 = towardY > 0 ? y + 1 - t : y;
+    ctx.fillRect(x0, y0, t, t);
+    ctx.restore();
+  }
+
+  _clearBand(x, y, side, px) {
+    const t = px / this.cell;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000000";
+    if (side === "top") ctx.fillRect(x, y, 1, t);
+    else if (side === "bottom") ctx.fillRect(x, y + 1 - t, 1, t);
+    else if (side === "left") ctx.fillRect(x, y, t, 1);
+    else ctx.fillRect(x + 1 - t, y, t, 1);
+    ctx.restore();
+  }
+
+  _haloCells(cells) {
+    const out = new Map();
+    for (const [x, y] of cells) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const key = `${x + dx},${y + dy}`;
+          out.set(key, [x + dx, y + dy]);
+        }
+      }
+    }
+    return [...out.values()];
+  }
+
+  _clearCells(cells) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000000";
+    for (const [x, y] of cells) ctx.fillRect(x, y, 1, 1);
+    ctx.restore();
+  }
+
+  _redrawEyes() {
+    this._record = null;
+    if (this.skin === "moss14") this._drawMossEyesBody();
+    else this._drawEyesBody(this.grid);
+  }
+
+  drawCollisionOverlay() {
+    const ctx = this.ctx;
+    for (const [x, y] of this._eyeCells) {
+      this.px(x, y, 1, 1, this.palette.accent, 0.2);
+    }
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = "#ff4d6d";
+    for (const [x, y] of this._collisionCells) ctx.fillRect(x, y, 1, 1);
+    ctx.restore();
   }
 
   // -- parts -------------------------------------------------------------
@@ -769,6 +983,10 @@ export class Character {
   }
 
   drawEyes(grid) {
+    this._runShape("eye", () => this._drawEyesBody(grid));
+  }
+
+  _drawEyesBody(grid) {
     const p = this.params;
     const open = clamp(p.eyeOpen * (1 - this.blink), 0, 1.6);
     const lookX = Math.round(clamp(this.look.x, -1, 1));
@@ -878,6 +1096,10 @@ export class Character {
   }
 
   drawMouth(grid) {
+    this._runShape("mouth", () => this._drawMouthBody(grid));
+  }
+
+  _drawMouthBody(grid) {
     const p = this.params;
     const original = grid === 12;
     const cx = grid / 2;

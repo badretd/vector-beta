@@ -394,6 +394,16 @@ export class SettingsUI {
       "settings.character.size",
       this.range("face.scale", 0.7, 1.5, 0.05, (v) => `${v.toFixed(2)}×`),
     ));
+    this.el.body.appendChild(this.field(
+      "settings.character.separation",
+      this.select("face.separation", [
+        ["inset", "settings.character.separationInset"],
+        ["gap", "settings.character.separationGap"],
+        ["trim", "settings.character.separationTrim"],
+        ["off", "settings.character.separationOff"],
+      ]),
+      "settings.character.separationHint",
+    ));
     this.el.body.appendChild(this.toggleField("settings.character.follow", "face.eye_tracking"));
     this.el.body.appendChild(this.toggleField("settings.character.blink", "face.blink"));
     this.el.body.appendChild(this.toggleField("settings.character.breathe", "face.breathing"));

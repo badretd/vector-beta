@@ -331,7 +331,8 @@ body.idle .text-btn {
   display: block;
 }
 
-#character {
+#character,
+#lab-character {
   position: relative;
   display: block;
   width: 100%;

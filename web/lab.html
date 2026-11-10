@@ -46,6 +46,18 @@
           </select>
         </div>
         <div class="lab-row">
+          <label class="field-label" for="lab-separation">Separation</label>
+          <select id="lab-separation">
+            <option value="inset">Inset (edge pullback)</option>
+            <option value="gap">Background gap</option>
+            <option value="trim">Trim pixels</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="lab-row">
+          <label class="lab-check"><input id="lab-collisions" type="checkbox" /> show collisions</label>
+        </div>
+        <div class="lab-row">
           <label class="field-label" for="lab-intensity">Intensity</label>
           <input id="lab-intensity" type="range" min="0.2" max="1.4" step="0.05" value="1" />
           <span class="range-value" id="lab-intensity-value">1.00</span>
