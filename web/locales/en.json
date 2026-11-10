@@ -8,7 +8,7 @@
     "version": "v{version}"
   },
   "stage": {
-    "placeholder": "Speak or type to Vector…",
+    "placeholder": "Speak or type to {name}…",
     "firstHint": "click the background to mute · scroll to resize",
     "name": "VECTOR"
   },
@@ -57,7 +57,7 @@
     "sub": "local & private",
     "empty": "Nothing here yet. Say something.",
     "you": "you",
-    "vector": "vector",
+    "vector": "{name}",
     "clear": "clear",
     "export": "export",
     "clearConfirm": "Clear the whole conversation?"
@@ -85,7 +85,14 @@
     },
     "character": {
       "style": "Character",
-      "pixel": "Refined 16×16",
+      "pack": "Character pack",
+      "packHint": "The pack sets the name, the face, and the persona.",
+      "custom": "Custom pack",
+      "customName": "Custom name",
+      "customSkin": "Skin",
+      "customPrompt": "System prompt",
+      "customPromptHint": "The base personality. Emotion and style rules are still added automatically.",
+      "pixel": "Detailed 16×16",
       "original": "Original 12×12",
       "palette": "Palette",
       "mint": "Mint",
@@ -104,6 +111,7 @@
     },
     "companion": {
       "name": "Name",
+      "nameHint": "Leave empty to use the pack name.",
       "personality": "Personality",
       "replyLanguage": "Reply language",
       "length": "Reply length",
@@ -139,8 +147,8 @@
     "languageChanged": "Language changed."
   },
   "onboarding": {
-    "title": "Hi. I'm Vector.",
-    "text": "A small program with a face. I listen, I type, and I never speak aloud. Let's check that everything is ready.",
+    "title": "Hi. I'm a small program.",
+    "text": "I have a face, I listen, I type, and I never speak aloud. First, let's check that everything is ready.",
     "language": "Language",
     "checks": "Readiness",
     "llm": "Local LLM",
@@ -158,6 +166,13 @@
     "retry": "retry",
     "demo": "explore with the offline demo",
     "style": "How should I look?",
+    "character": "Who should I be?",
+    "characterText": "Choose a character pack. You can change this later in Settings.",
+    "custom": "Custom",
+    "customHint": "Pick a skin and write your own persona.",
+    "customName": "Name",
+    "customSkin": "Skin",
+    "customPrompt": "System prompt",
     "theme": "Room",
     "start": "Enter the screen",
     "skip": "skip",

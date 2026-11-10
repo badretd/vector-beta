@@ -30,6 +30,9 @@ def test_sanitize_clamps_values():
 
 def test_default_appearance_is_mono_and_original_face():
     assert DEFAULTS["app"]["theme"] == "mono"
+    assert DEFAULTS["app"]["pack_chosen"] is False
+    assert DEFAULTS["character"]["pack"] == "vector"
+    assert DEFAULTS["face"]["skin"] == "vector12"
     assert DEFAULTS["face"]["style"] == "original"
     assert DEFAULTS["face"]["palette_name"] == "mono"
     assert DEFAULTS["face"]["particles"] is False
@@ -40,10 +43,14 @@ def test_default_appearance_is_mono_and_original_face():
 def test_unknown_appearance_styles_fall_back():
     settings = copy.deepcopy(DEFAULTS)
     settings["app"]["theme"] = "nonsense"
+    settings["character"]["pack"] = "nonsense"
+    settings["face"]["skin"] = "nonsense"
     settings["face"]["style"] = "nonsense"
     settings["face"]["palette_name"] = "nonsense"
     clean = sanitize(settings)
     assert clean["app"]["theme"] == "mono"
+    assert clean["character"]["pack"] == "vector"
+    assert clean["face"]["skin"] == "vector12"
     assert clean["face"]["style"] == "original"
     assert clean["face"]["palette_name"] == "mono"
 
@@ -58,19 +65,19 @@ def test_old_minimal_face_style_migrates_to_original():
 def test_settings_store_roundtrip(tmp_path):
     path = tmp_path / "settings.json"
     store = SettingsStore(path)
-    assert store.get("persona.name") == "Vector"
-    store.update({"persona": {"name": "Nib"}, "custom_unknown": {"x": 1}})
+    assert store.get("persona.name") == ""
+    store.update({"persona": {"name": "Lumen"}, "custom_unknown": {"x": 1}})
     again = SettingsStore(path)
-    assert again.get("persona.name") == "Nib"
+    assert again.get("persona.name") == "Lumen"
     assert again.get("custom_unknown.x") == 1
-    assert json.loads(path.read_text())["persona"]["name"] == "Nib"
+    assert json.loads(path.read_text())["persona"]["name"] == "Lumen"
 
 
 def test_reset(tmp_path):
     store = SettingsStore(tmp_path / "settings.json")
-    store.update({"persona": {"name": "ZIP"}})
+    store.update({"persona": {"name": "MOSS"}})
     store.reset()
-    assert store.get("persona.name") == "Vector"
+    assert store.get("persona.name") == ""
 
 
 def test_legacy_ink_theme_migrates_to_mono():
@@ -86,3 +93,56 @@ def test_effects_are_off_by_default():
     assert DEFAULTS["face"]["particles"] is False
     assert DEFAULTS["face"]["glow"] is False
     assert DEFAULTS["face"]["antenna"] is False
+
+
+def test_legacy_character_packs_migrate(tmp_path):
+    cases = {
+        "oracle": ("lumen", "lumen16"),
+        "terminal": ("moss", "moss14"),
+        "kitten": ("vector", "vector12"),
+        "gremlin": ("vector", "vector12"),
+    }
+    for preset, (pack, skin) in cases.items():
+        path = tmp_path / f"{preset}.json"
+        path.write_text(json.dumps({
+            "persona": {"preset": preset, "name": "Nib"},
+            "face": {"style": "pixel"},
+            "app": {"onboarded": True},
+        }))
+        store = SettingsStore(path)
+        assert store.get("character.pack") == pack
+        assert store.get("face.skin") == skin
+        assert store.get("app.pack_chosen") is False
+
+
+def test_custom_pack_is_sanitized_and_resolved():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["character"]["pack"] = "custom"
+    settings["character"]["custom"] = {
+        "name": "  My friend  ",
+        "prompt": "Be gentle.",
+        "skin": "moss14",
+        "palette": "paper",
+    }
+    clean = sanitize(settings)
+    assert clean["character"]["custom"]["name"] == "My friend"
+    assert clean["character"]["custom"]["prompt"] == "Be gentle."
+    assert clean["face"]["skin"] == "moss14"
+    assert clean["face"]["style"] == "pixel"
+    assert clean["persona"]["preset"] == "vector"
+
+
+def test_custom_pack_limits_and_fallbacks():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["character"]["pack"] = "custom"
+    settings["character"]["custom"] = {
+        "name": "x" * 100,
+        "prompt": "y" * 5000,
+        "skin": "nonsense",
+        "palette": "nonsense",
+    }
+    clean = sanitize(settings)
+    assert len(clean["character"]["custom"]["name"]) == 40
+    assert len(clean["character"]["custom"]["prompt"]) == 2400
+    assert clean["character"]["custom"]["skin"] == "vector12"
+    assert clean["character"]["custom"]["palette"] == "mono"

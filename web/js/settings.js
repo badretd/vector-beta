@@ -176,6 +176,15 @@ export class SettingsUI {
     return node;
   }
 
+  textarea(path, placeholder = "", rows = 4) {
+    const node = el("textarea", "settings-input");
+    node.rows = rows;
+    node.value = String(this.get(path) ?? "");
+    node.placeholder = placeholder;
+    node.addEventListener("change", () => this.patch(path, node.value.trim()));
+    return node;
+  }
+
   number(path, min, max) {
     const node = el("input");
     node.type = "number";
@@ -295,13 +304,66 @@ export class SettingsUI {
   }
 
   renderCharacter() {
+    const packs = this.app.characters?.packs || [];
+    const packSelect = el("select");
+    for (const pack of packs) {
+      const option = el("option", "", pack.name);
+      option.value = pack.id;
+      packSelect.appendChild(option);
+    }
+    const customOption = el("option", "", this.app.i18n.t("settings.character.custom"));
+    customOption.value = "custom";
+    packSelect.appendChild(customOption);
+    packSelect.value = this.get("character.pack") || "vector";
+    packSelect.addEventListener("change", () => {
+      this.app.applyPack(packSelect.value);
+      this.render();
+    });
     this.el.body.appendChild(this.field(
-      "settings.character.style",
-      this.select("face.style", [
-        ["original", "settings.character.original"],
-        ["pixel", "settings.character.pixel"],
-      ]),
+      "settings.character.pack",
+      packSelect,
+      "settings.character.packHint",
     ));
+
+    if ((this.get("character.pack") || "vector") === "custom") {
+      const nameInput = this.text(
+        "character.custom.name",
+        this.app.characters?.custom?.default_name || "Custom",
+      );
+      nameInput.addEventListener("change", () => {
+        const fallback = this.app.characters?.custom?.default_name || "Custom";
+        this.app.patchSettings({ persona: { name: nameInput.value.trim() || fallback } });
+      });
+      this.el.body.appendChild(this.field(
+        "settings.character.customName",
+        nameInput,
+      ));
+      const skins = this.app.characters?.skins || [];
+      const skinLabels = Object.fromEntries(skins.map((skin) => [
+        skin.id,
+        this.app.i18n.locale === "ru" ? skin.ru : skin.en,
+      ]));
+      const skinSelect = this.select(
+        "character.custom.skin",
+        skins.map((skin) => skin.id),
+        skinLabels,
+      );
+      skinSelect.addEventListener("change", () => {
+        this.app.patchSettings({ face: { skin: skinSelect.value } });
+        this.render();
+      });
+      this.el.body.appendChild(this.field(
+        "settings.character.customSkin",
+        skinSelect,
+      ));
+      const defaultPrompt = this.app.characters?.custom?.default_prompt || "";
+      this.el.body.appendChild(this.field(
+        "settings.character.customPrompt",
+        this.textarea("character.custom.prompt", defaultPrompt, 5),
+        "settings.character.customPromptHint",
+      ));
+    }
+
     const themeSelect = this.select("app.theme", [
       ["mono", "settings.character.mono"],
       ["mint", "settings.character.mint"],
@@ -322,6 +384,9 @@ export class SettingsUI {
     ]);
     paletteSelect.addEventListener("change", () => {
       this.app.patchSettings({ face: { palette: null } });
+      if ((this.get("character.pack") || "vector") === "custom") {
+        this.app.patchSettings({ character: { custom: { palette: paletteSelect.value } } });
+      }
       this.render();
     });
     this.el.body.appendChild(this.field("settings.character.palette", paletteSelect));
@@ -333,7 +398,9 @@ export class SettingsUI {
     this.el.body.appendChild(this.toggleField("settings.character.blink", "face.blink"));
     this.el.body.appendChild(this.toggleField("settings.character.breathe", "face.breathing"));
     this.el.body.appendChild(this.toggleField("settings.character.particles", "face.particles"));
-    this.el.body.appendChild(this.toggleField("settings.character.antenna", "face.antenna"));
+    if ((this.get("face.skin") || "vector12") === "lumen16") {
+      this.el.body.appendChild(this.toggleField("settings.character.antenna", "face.antenna"));
+    }
     this.el.body.appendChild(this.toggleField("settings.character.reduced", "app.reduced_motion"));
 
     const colors = el("div", "color-grid");
@@ -353,15 +420,14 @@ export class SettingsUI {
   }
 
   renderCompanion() {
-    this.el.body.appendChild(this.field("settings.companion.name", this.text("persona.name")));
-
-    const personalities = (this.app.presets || []).map((preset) => [preset.id, preset.name]);
-    if (personalities.length) {
-      this.el.body.appendChild(this.field(
-        "settings.companion.personality",
-        this.select("persona.preset", personalities.map(([id]) => id), Object.fromEntries(personalities)),
-      ));
-    }
+    const activePack = (this.app.characters?.packs || []).find(
+      (pack) => pack.id === (this.get("character.pack") || "vector"),
+    );
+    this.el.body.appendChild(this.field(
+      "settings.companion.name",
+      this.text("persona.name", activePack?.name || "Vector"),
+      "settings.companion.nameHint",
+    ));
 
     const languages = [
       "auto", "en", "ru", "de", "es", "fr", "uk", "pl", "it", "pt", "zh", "ja",

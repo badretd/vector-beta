@@ -16,6 +16,17 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .characters import (
+    CHARACTER_PACKS,
+    CUSTOM_PACK_ID,
+    MAX_CUSTOM_NAME,
+    MAX_CUSTOM_PROMPT,
+    PACK_IDS,
+    SKIN_IDS,
+    pack_for_legacy,
+    resolve_character,
+)
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("VECTOR_DATA_DIR", ROOT / "data")).expanduser()
 WEB_DIR = ROOT / "web"
@@ -45,15 +56,25 @@ FACE_STYLES = ("original", "pixel")
 PALETTES = ("mono", "mint", "paper")
 
 DEFAULTS: dict[str, Any] = {
-    "version": 2,
+    "version": 3,
     "app": {
         "language": "en",
         "theme": "mono",
         "onboarded": False,
+        "pack_chosen": False,
         "reduced_motion": False,
         "sound": True,
         "ui_scale": 1.0,
         "first_run_hint": True,
+    },
+    "character": {
+        "pack": "vector",
+        "custom": {
+            "name": "",
+            "prompt": "",
+            "skin": "vector12",
+            "palette": "mono",
+        },
     },
     "llm": {
         "base_url": "http://127.0.0.1:11434",
@@ -99,7 +120,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "persona": {
         "preset": "vector",
-        "name": "Vector",
+        "name": "",
         "user_name": "",
         "custom": "",
         "reply_language": "auto",
@@ -109,6 +130,7 @@ DEFAULTS: dict[str, Any] = {
         "curiosity": 0.9,
     },
     "face": {
+        "skin": "vector12",
         "style": "original",
         "palette_name": "mono",
         "palette": {},
@@ -168,15 +190,80 @@ def _color(value: Any, fallback: str) -> str:
     return text if _HEX_RE.match(text) else fallback
 
 
+def migrate_legacy_character(raw: dict[str, Any], merged: dict[str, Any]) -> dict[str, Any]:
+    """Give settings written before character packs a sensible initial pack.
+
+    Existing users see the pack chooser once because their old preset may have
+    been removed. Their history and every other setting are untouched.
+    """
+    persona = raw.get("persona") if isinstance(raw.get("persona"), dict) else {}
+    face = raw.get("face") if isinstance(raw.get("face"), dict) else {}
+    pack_id = pack_for_legacy(persona.get("preset", "vector"), face.get("style", "original"))
+    pack = CHARACTER_PACKS[pack_id]
+    merged.setdefault("character", {})["pack"] = pack_id
+    merged["face"]["skin"] = pack.skin
+    merged["face"]["style"] = "original" if pack.skin == "vector12" else "pixel"
+    old_name = str(persona.get("name") or "").strip()
+    if old_name and old_name not in {"Vector", "MOSS", "Lumen", "Nib", "ZIP"}:
+        merged["persona"]["name"] = old_name[:40]
+    else:
+        merged["persona"]["name"] = pack.name
+    merged["persona"]["preset"] = pack_id
+    # Show the pack chooser once, even for people who finished onboarding
+    # before character packs existed.
+    merged["app"]["pack_chosen"] = False
+    return merged
+
+
 def sanitize(settings: dict[str, Any]) -> dict[str, Any]:
     """Keep values inside sane ranges so a bad import cannot brick the app."""
     try:
         s = settings
         s["app"]["ui_scale"] = _clamp(float(s["app"].get("ui_scale", 1.0)), 0.75, 1.6)
         s["app"]["onboarded"] = bool(s["app"].get("onboarded", False))
+        s["app"]["pack_chosen"] = bool(s["app"].get("pack_chosen", False))
         s["app"]["reduced_motion"] = bool(s["app"].get("reduced_motion", False))
         s["app"]["sound"] = bool(s["app"].get("sound", True))
         s["app"]["first_run_hint"] = bool(s["app"].get("first_run_hint", True))
+
+        character = s.setdefault("character", {})
+        if not isinstance(character, dict):
+            character = {}
+        pack = str(character.get("pack") or "vector").strip().lower()
+        if pack not in PACK_IDS:
+            pack = "vector"
+        character["pack"] = pack
+        custom = character.get("custom")
+        if not isinstance(custom, dict):
+            custom = {}
+        custom["name"] = str(custom.get("name") or "").strip()[:MAX_CUSTOM_NAME]
+        custom["prompt"] = str(custom.get("prompt") or "").strip()[:MAX_CUSTOM_PROMPT]
+        custom_skin = str(custom.get("skin") or "vector12").strip().lower()
+        if custom_skin not in SKIN_IDS:
+            custom_skin = "vector12"
+        custom["skin"] = custom_skin
+        custom_palette = str(custom.get("palette") or "mono").strip().lower()
+        if custom_palette == "ink":
+            custom_palette = "mono"
+        if custom_palette not in PALETTES:
+            custom_palette = "mono"
+        custom["palette"] = custom_palette
+        character["custom"] = custom
+        s["character"] = character
+        resolved = resolve_character(s)
+        s["face"]["skin"] = resolved["skin"]
+        s["face"]["style"] = "original" if resolved["skin"] == "vector12" else "pixel"
+        previous_preset = str(s["persona"].get("preset") or "")
+        persona_name = str(s["persona"].get("name") or "").strip()[:40]
+        previous_pack = CHARACTER_PACKS.get(previous_preset)
+        if (
+            pack != CUSTOM_PACK_ID
+            and previous_pack is not None
+            and previous_pack.name == persona_name
+        ):
+            persona_name = resolved["name"]
+        s["persona"]["name"] = persona_name
+        s["persona"]["preset"] = pack if pack != CUSTOM_PACK_ID else "vector"
 
         s["llm"]["temperature"] = _clamp(float(s["llm"]["temperature"]), 0.0, 2.0)
         s["llm"]["top_p"] = _clamp(float(s["llm"]["top_p"]), 0.05, 1.0)
@@ -261,8 +348,13 @@ class SettingsStore:
             if self.path.exists():
                 try:
                     raw = json.loads(self.path.read_text(encoding="utf-8"))
-                    self._settings = sanitize(_deep_merge(DEFAULTS, raw))
-                except (OSError, json.JSONDecodeError):
+                    if not isinstance(raw, dict):
+                        raise ValueError("settings must be an object")
+                    merged = _deep_merge(DEFAULTS, raw)
+                    if "character" not in raw:
+                        merged = migrate_legacy_character(raw, merged)
+                    self._settings = sanitize(merged)
+                except (OSError, json.JSONDecodeError, ValueError):
                     self._settings = copy.deepcopy(DEFAULTS)
             else:
                 self._settings = copy.deepcopy(DEFAULTS)

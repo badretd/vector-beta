@@ -42,7 +42,11 @@ const dom = {
   onboardPanel: $("onboard-panel"),
   onboardStepCount: $("onboard-step-count"),
   onboardLang: $("onboard-lang"),
-  onboardStyle: $("onboard-style"),
+  onboardPacks: $("onboard-packs"),
+  onboardCustom: $("onboard-custom"),
+  onboardCustomName: $("onboard-custom-name"),
+  onboardCustomSkin: $("onboard-custom-skin"),
+  onboardCustomPrompt: $("onboard-custom-prompt"),
   onboardTheme: $("onboard-theme"),
   onboardChecks: $("onboard-checks"),
   onboardRetry: $("onboard-retry"),
@@ -59,7 +63,7 @@ const app = {
   defaults: null,
   health: {},
   asr: {},
-  presets: [],
+  characters: { packs: [], skins: [], custom: {} },
   emotions: EMOTION_META,
   server: {},
   version: "",
@@ -124,6 +128,11 @@ function formatTime(ts) {
 function emotionColor(id) {
   const meta = (app.emotions || []).find((item) => item.id === id) || EMOTIONS[id];
   return meta?.color || "#7dffc4";
+}
+
+function companionName() {
+  const pack = packById(app.settings?.character?.pack || "vector");
+  return app.settings?.persona?.name || pack?.name || "Vector";
 }
 
 function setGlow(id) {
@@ -211,7 +220,9 @@ function applySettings(settings, options = {}) {
   document.body.classList.toggle("reduced-motion", reduced);
 
   if (app.character) {
-    app.character.setStyle(settings.face.style);
+    const skin = settings.face?.skin
+      || (settings.face?.style === "pixel" ? "lumen16" : "vector12");
+    app.character.setSkin(skin);
     app.character.setPalette(settings.face.palette_name, settings.face.palette || {});
     app.character.setOptions({
       eyeTracking: Boolean(settings.face.eye_tracking),
@@ -234,7 +245,7 @@ function applySettings(settings, options = {}) {
   app.mode = settings.input?.mode || "silence";
   updateMode();
 
-  if (dom.input) dom.input.placeholder = i18n.t("stage.placeholder");
+  if (dom.input) dom.input.placeholder = i18n.t("stage.placeholder", { name: companionName() });
   updateMicButton();
   setGlow(app.currentEmotion);
 
@@ -548,7 +559,9 @@ function renderHistory() {
     const meta = document.createElement("div");
     meta.className = "msg-meta";
     const who = document.createElement("span");
-    who.textContent = i18n.t(message.role === "user" ? "history.you" : "history.vector");
+    who.textContent = i18n.t(message.role === "user" ? "history.you" : "history.vector", {
+      name: companionName(),
+    });
     const when = document.createElement("span");
     when.textContent = formatTime(message.ts);
     meta.append(who, when);
@@ -675,7 +688,7 @@ function applyHello(data) {
   app.settings = data.settings;
   app.health = data.health || {};
   app.asr = data.asr || app.health.asr || {};
-  app.presets = data.presets || [];
+  app.characters = data.characters || { packs: [], skins: [], custom: {} };
   app.server = data.server || {};
   app.version = data.version || "";
   app.history = data.history || { messages: [], facts: [], user_name: "" };
@@ -692,9 +705,11 @@ function applyHello(data) {
   updateMode();
   setStatus("idle");
   const forceOnboarding = new URLSearchParams(location.search).has("onboarding");
-  if (forceOnboarding || !app.settings.app.onboarded) showOnboarding();
+  const needsPack = !app.settings.app.pack_chosen;
+  if (forceOnboarding || !app.settings.app.onboarded) showOnboarding(1);
+  else if (needsPack) showOnboarding(3);
   else hideOnboarding();
-  if (!app.settings.app.onboarded) refreshChecks();
+  if (!app.settings.app.onboarded || needsPack) refreshChecks();
 }
 
 function handleEvent(data) {
@@ -925,7 +940,7 @@ function handleEvent(data) {
 function refreshLabels() {
   i18n.apply(document);
   if (dom.langBtn) dom.langBtn.textContent = i18n.locale.toUpperCase();
-  if (dom.input) dom.input.placeholder = i18n.t("stage.placeholder");
+  if (dom.input) dom.input.placeholder = i18n.t("stage.placeholder", { name: companionName() });
   updateMicButton();
   updateMode();
   updatePending();
@@ -961,9 +976,77 @@ function setOnboardStep(step) {
   dom.onboardStart.hidden = safe !== 3;
 }
 
-function showOnboarding() {
+function packList() {
+  return app.characters?.packs || [];
+}
+
+function packById(id) {
+  return packList().find((pack) => pack.id === id) || null;
+}
+
+function skinList() {
+  return app.characters?.skins || [];
+}
+
+function renderPackPreview(canvas, pack) {
+  if (!canvas || !pack) return;
+  canvas.style.pointerEvents = "none";
+  const preview = new Character(canvas, {
+    skin: pack.skin,
+    paletteName: pack.palette,
+    eyeTracking: false,
+    blink: false,
+    breathing: false,
+    particles: false,
+    glow: false,
+    antenna: false,
+    reducedMotion: true,
+  });
+  preview.setEmotion("happy", 1, 0, "local");
+  preview.update(1, performance.now());
+  preview.draw();
+  preview.destroy();
+}
+
+function renderPackChoices() {
+  if (!dom.onboardPacks) return;
+  dom.onboardPacks.textContent = "";
+  for (const pack of packList()) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice pack-choice";
+    button.dataset.pack = pack.id;
+    const canvas = document.createElement("canvas");
+    canvas.className = "pack-face";
+    button.appendChild(canvas);
+    const name = document.createElement("b");
+    name.textContent = pack.name;
+    const tagline = document.createElement("small");
+    tagline.textContent = i18n.locale === "ru" ? pack.tagline_ru : pack.tagline_en;
+    button.append(name, tagline);
+    dom.onboardPacks.appendChild(button);
+    renderPackPreview(canvas, pack);
+  }
+
+  const custom = document.createElement("button");
+  custom.type = "button";
+  custom.className = "choice pack-choice";
+  custom.dataset.pack = "custom";
+  const icon = document.createElement("span");
+  icon.className = "pack-custom-icon";
+  icon.textContent = "+";
+  const name = document.createElement("b");
+  name.textContent = i18n.t("onboarding.custom");
+  const tagline = document.createElement("small");
+  tagline.textContent = i18n.t("onboarding.customHint");
+  custom.append(icon, name, tagline);
+  dom.onboardPacks.appendChild(custom);
+}
+
+function showOnboarding(step = 1) {
+  renderPackChoices();
   dom.onboarding.hidden = false;
-  setOnboardStep(1);
+  setOnboardStep(step);
   updateOnboardSelections();
   refreshChecks();
 }
@@ -972,18 +1055,68 @@ function hideOnboarding() {
   dom.onboarding.hidden = true;
 }
 
+function updateCustomPackFields() {
+  const isCustom = (app.settings?.character?.pack || "vector") === "custom";
+  dom.onboardCustom.hidden = !isCustom;
+  if (!isCustom) return;
+  const custom = app.settings?.character?.custom || {};
+  dom.onboardCustomName.placeholder = app.characters?.custom?.default_name || "Custom";
+  dom.onboardCustomPrompt.placeholder = app.characters?.custom?.default_prompt || "";
+  if (document.activeElement !== dom.onboardCustomName) {
+    dom.onboardCustomName.value = custom.name || "";
+  }
+  if (document.activeElement !== dom.onboardCustomPrompt) {
+    dom.onboardCustomPrompt.value = custom.prompt || "";
+  }
+  dom.onboardCustomSkin.textContent = "";
+  for (const skin of skinList()) {
+    const option = document.createElement("option");
+    option.value = skin.id;
+    option.textContent = i18n.locale === "ru" ? skin.ru : skin.en;
+    dom.onboardCustomSkin.appendChild(option);
+  }
+  dom.onboardCustomSkin.value = custom.skin || app.characters?.custom?.default_skin || "vector12";
+}
+
 function updateOnboardSelections() {
   const language = app.settings?.app?.language || "en";
-  const style = app.settings?.face?.style || "pixel";
-  const theme = app.settings?.app?.theme || "ink";
+  const pack = app.settings?.character?.pack || "vector";
+  const theme = app.settings?.app?.theme || "mono";
   dom.onboardLang.querySelectorAll("[data-lang]").forEach((button) => {
     button.classList.toggle("active", button.dataset.lang === language);
   });
-  dom.onboardStyle.querySelectorAll("[data-face-style]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.faceStyle === style);
+  dom.onboardPacks?.querySelectorAll("[data-pack]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.pack === pack);
   });
   dom.onboardTheme.querySelectorAll("[data-theme]").forEach((button) => {
     button.classList.toggle("active", button.dataset.theme === theme);
+  });
+  updateCustomPackFields();
+}
+
+function applyPack(packId) {
+  const currentName = app.settings?.persona?.name || "";
+  const knownNames = new Set(["Vector", "MOSS", "Lumen", "Nib", "ZIP"]);
+  const keepCustomName = currentName && !knownNames.has(currentName);
+  if (packId === "custom") {
+    const custom = app.settings?.character?.custom || {};
+    const customName = custom.name
+      || (keepCustomName ? currentName : app.characters?.custom?.default_name || "Custom");
+    patchSettings({
+      character: { pack: "custom", custom: { name: customName } },
+      persona: { name: customName },
+      face: {
+        skin: custom.skin || app.characters?.custom?.default_skin || "vector12",
+      },
+    });
+    return;
+  }
+  const pack = packById(packId);
+  if (!pack) return;
+  patchSettings({
+    character: { pack: pack.id },
+    persona: { name: keepCustomName ? currentName : pack.name },
+    face: { skin: pack.skin },
   });
 }
 
@@ -1037,7 +1170,7 @@ async function refreshChecks(healthData = null) {
 
 function finishOnboarding(demo) {
   patchSettings({
-    app: { onboarded: true, first_run_hint: false },
+    app: { onboarded: true, pack_chosen: true, first_run_hint: false },
     ...(demo ? { llm: { mock: true } } : {}),
   });
   hideOnboarding();
@@ -1215,11 +1348,31 @@ function bindEvents() {
     setLanguage(button.dataset.lang);
     updateOnboardSelections();
   });
-  dom.onboardStyle.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-face-style]");
+  dom.onboardPacks.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pack]");
     if (!button) return;
-    patchSettings({ face: { style: button.dataset.faceStyle } });
+    applyPack(button.dataset.pack);
     updateOnboardSelections();
+    if (button.dataset.pack === "custom") {
+      dom.onboardCustomName.focus();
+      dom.onboardCustom.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  });
+  dom.onboardCustomName.addEventListener("input", () => {
+    const name = dom.onboardCustomName.value.trim();
+    patchSettings({
+      character: { custom: { name } },
+      persona: { name: name || app.characters?.custom?.default_name || "Custom" },
+    });
+  });
+  dom.onboardCustomSkin.addEventListener("change", () => {
+    patchSettings({
+      character: { custom: { skin: dom.onboardCustomSkin.value } },
+      face: { skin: dom.onboardCustomSkin.value },
+    });
+  });
+  dom.onboardCustomPrompt.addEventListener("input", () => {
+    patchSettings({ character: { custom: { prompt: dom.onboardCustomPrompt.value } } });
   });
   dom.onboardTheme.addEventListener("click", (event) => {
     const button = event.target.closest("[data-theme]");
@@ -1262,7 +1415,7 @@ async function init() {
   await i18n.init(storedLocale === "ru" ? "ru" : "en");
 
   app.character = new Character(dom.character, {
-    style: "original",
+    skin: "vector12",
     paletteName: "mono",
     eyeTracking: true,
     blink: true,
@@ -1296,6 +1449,7 @@ async function init() {
 
   app.patchSettings = patchSettings;
   app.applySettings = applySettings;
+  app.applyPack = applyPack;
   app.toast = toast;
   app.send = send;
   app.sendAudio = sendAudio;

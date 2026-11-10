@@ -6,7 +6,7 @@ const canvas = $("lab-character");
 const glow = $("lab-glow");
 const status = $("lab-status");
 const character = new Character(canvas, {
-  style: "original",
+  skin: "vector12",
   paletteName: "mono",
   eyeTracking: true,
   blink: true,
@@ -24,12 +24,10 @@ const params = new URLSearchParams(location.search);
 if (params.get("theme") && ["ink", "mint", "paper"].includes(params.get("theme"))) {
   document.documentElement.dataset.theme = params.get("theme");
 }
-if (params.get("style") === "original") {
-  character.setStyle("original");
-  $("lab-style").value = "original";
-} else if (params.get("style") === "pixel") {
-  character.setStyle("pixel");
-  $("lab-style").value = "pixel";
+const skinParam = params.get("skin") || (params.get("style") === "pixel" ? "lumen16" : params.get("style") === "original" ? "vector12" : "");
+if (skinParam && ["vector12", "lumen16", "moss14"].includes(skinParam)) {
+  character.setSkin(skinParam);
+  $("lab-skin").value = skinParam;
 }
 if (params.get("palette") && ["mono", "mint", "paper"].includes(params.get("palette"))) {
   character.setPalette(params.get("palette"));
@@ -43,8 +41,8 @@ if (params.get("state") && ["idle", "listening", "thinking", "speaking", "sleepi
 }
 
 function refreshStatus() {
-  const palette = document.documentElement.dataset.theme || "ink";
-  status.textContent = `${EMOTIONS[emotion]?.en || emotion} · ${character.state} · ${palette}`;
+  const palette = document.documentElement.dataset.theme || "mono";
+  status.textContent = `${EMOTIONS[emotion]?.en || emotion} · ${character.state} · ${character.skin} · ${palette}`;
 }
 
 character.onEmotion = (id, meta) => {
@@ -88,8 +86,8 @@ states.addEventListener("click", (event) => {
 });
 
 // Style / palette
-$("lab-style").addEventListener("change", (event) => {
-  character.setStyle(event.target.value);
+$("lab-skin").addEventListener("change", (event) => {
+  character.setSkin(event.target.value);
   refreshStatus();
 });
 $("lab-palette").addEventListener("change", (event) => {

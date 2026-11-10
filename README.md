@@ -4,7 +4,7 @@
 
 **Vector** is a local voice companion with a tiny animated pixel face. It listens through your microphone, transcribes speech locally with Whisper, streams replies from a local LLM through Ollama, and reacts with facial animations. It **never speaks aloud** — no text-to-speech, no audio replies. Vector types.
 
-The interface is deliberately one screen: a centered face, one line of text at the bottom, and a few almost-invisible controls in the corners. The default character is the original **12×12 white-on-black sprite**, now alive with blinking, gaze, breathing, and mouth movement. A refined **16×16** variant is available in Settings.
+The interface is deliberately one screen: a centered face, one line of text at the bottom, and a few almost-invisible controls in the corners. Three character packs are included: **Vector** (the original **12×12** sprite), **MOSS** (a 14×14 CRT terminal), and **Lumen** (a detailed 16×16 face). You can also build a custom pack from any skin and your own system prompt.
 
 ![Vector](docs/screenshot.png)
 
@@ -14,7 +14,7 @@ The interface is deliberately one screen: a centered face, one line of text at t
 
 - **One stage, one face, one line.** No persistent chat panel, HUD, meters, status pills, or toolbars.
 - **The character is the interface.** State is expressed by the face: listening, thinking, typing, sleeping, emoting.
-- **Original sprite first.** The 12×12 face is the default and the visual identity. The 16×16 variant is optional, for people who want more detail.
+- **Character packs, not a costume menu.** A pack owns the name, face, palette, and persona prompt. Vector keeps the original 12×12 silhouette; MOSS and Lumen are distinct characters, not filters.
 - **Calm by default.** Flat black, white face, amber accent, thin borders. Particles, hearts, sparkles, and glow are off unless enabled.
 - **Progressive disclosure.** Settings, history, and the debug console appear only when asked for.
 - **Local and private.** Audio and text stay on this machine. Whisper, Silero VAD, and Ollama run locally. Only the one-time model download touches the network.
@@ -206,7 +206,7 @@ On the first launch Vector shows a short setup screen:
    - **Local LLM** — Ollama is running and reachable;
    - **Speech recognition** — Whisper is loading;
    - **Microphone** — the browser can see an input device.
-3. **How should I look?** — pick **Original 12×12** (default) or **Refined 16×16**, and a room theme: **Mono**, **Mint**, or **Paper**.
+3. **Who should I be?** — pick **Vector**, **MOSS**, or **Lumen**, or create a **custom pack** with your own name, skin, and system prompt. Then pick a room theme: **Mono**, **Mint**, or **Paper**.
 
 The speech model downloads on first use into `data/models/whisper/`. The default `small` model is about **466 MB**, so the first check may take a few minutes and needs an internet connection. Progress is shown on the readiness screen and in the debug console.
 
@@ -285,9 +285,17 @@ The parser accepts `[happy]`, `<happy>`, `*happy*`, `(happy)`, `[emotion: happy]
 
 The face also has internal states (`listening`, `thinking`, `speaking`, `sleeping`) that are not requested from the model.
 
-## Character
+## Character packs
 
-The default character is the original **12×12** pixel face: two eyes and a mouth, drawn from the same geometry as `examples/Happy.png` and friends. It supports:
+A character pack owns the name, the face, the default palette, and the persona prompt. Three packs are built in:
+
+| Pack | Skin | Character |
+| --- | --- | --- |
+| **Vector** | 12×12 original | The playful, curious little program from the original sprite |
+| **MOSS** | 14×14 CRT | A creaky terminal with square phosphor eyes, a dim bezel, and a status LED |
+| **Lumen** | 16×16 detailed | A softer face with brows, cheeks, constellation freckles, and a gentle smile |
+
+All three use the same emotion state machine and nearest-neighbour pixel rendering. They support:
 
 - Random blinking, occasional double-blinks
 - Pointer-following eyes and idle saccades
@@ -297,17 +305,19 @@ The default character is the original **12×12** pixel face: two eyes and a mout
 - Sleeping (closed eyes, slower breathing)
 - Smooth transitions between expressions
 
-The **Refined 16×16** style adds brows, cheeks, an antenna, and optional sparkles/hearts/tears for people who want more expression. Both styles use nearest-neighbour pixel rendering and the same emotion state machine.
+A **custom pack** can reuse any of the three skins with your own name and base system prompt. The app still appends the emotion-tag and style rules, because those are what make the face respond.
 
-The **Face Lab** (`Settings → Character → Open face lab`, or `/lab.html`) shows every emotion, state, palette, size, and motion toggle. It is the fastest way to tune the character.
+Existing users are shown the pack chooser once after upgrading, so an old preset is never silently lost. `terminal` maps to MOSS, `oracle` to Lumen, and the removed `kitten`/`gremlin` presets fall back to Vector.
+
+The **Face Lab** (`Settings → Character → Open face lab`, or `/lab.html`) shows every skin, emotion, state, palette, size, and motion toggle. It is the fastest way to tune the character.
 
 ## Settings
 
 Everything lives in `data/settings.json` and saves automatically.
 
 - **Voice** — interface language, Whisper model, recognition language, microphone, silence before send, mic sensitivity, live partials.
-- **Character** — original/refined style, room theme, face palette, size, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
-- **Companion** — name, persona preset, reply language, reply length, turn-taking mode, idle nudges, mood, memory facts.
+- **Character** — character pack, custom pack fields, room theme, face palette, size, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
+- **Companion** — name override, reply language, reply length, turn-taking mode, idle nudges, mood, memory facts.
 - **Advanced** — Ollama URL and model, temperature, context, max tokens, ASR device/precision, log level, offline demo, import/export/reset.
 
 Themes are **Mono** (default), **Mint**, and **Paper**. The face palette is independent, so you can put a white face in a mint room or a dark face in a paper room.
@@ -320,6 +330,7 @@ vector-beta/
 │   ├── __main__.py         launcher, browser window, CLI flags
 │   ├── server.py           FastAPI, WebSocket hub, REST API, logging
 │   ├── config.py           defaults, validation, atomic settings store
+│   ├── characters.py       built-in packs, skins, legacy migration
 │   ├── asr.py              faster-whisper, Silero VAD, endpointing, partials
 │   ├── dialogue.py         turn manager, auto-send judge, memory, mood
 │   ├── llm.py              async Ollama streaming client + offline demo
@@ -355,7 +366,7 @@ Audio path: browser `getUserMedia` → AudioWorklet resamples to 16 kHz mono flo
 - Audio resampling happens in an AudioWorklet, not on the main thread.
 - The canvas pauses when the tab is hidden.
 - Partials are throttled; the final transcript is the only one that drives the turn manager.
-- The character uses a 12×12 or 16×16 logical grid, so drawing stays cheap.
+- The character uses a 12×12, 14×14, or 16×16 logical grid, so drawing stays cheap.
 
 ## Debug console
 
@@ -426,7 +437,7 @@ Also check that the model from Step 4 is pulled, or enable **Offline demo** in A
 
 **Face looks frozen** — check **Reduced motion**, **Blinking**, and **Breathing** in Settings → Character. The face uses `requestAnimationFrame`; a background tab throttles animation.
 
-**Face is too stark** — the default is the original 12×12 white sprite. Switch to **Refined 16×16** in Settings → Character for brows, cheeks, and more expression.
+**Face is too stark** — the default Vector pack is the original 12×12 white sprite. Switch to **Lumen** in Settings → Character for a detailed 16×16 face, or to **MOSS** for the 14×14 CRT look.
 
 ## License
 

@@ -136,8 +136,8 @@
       </div>
 
       <section class="onboard-step" data-step="1">
-        <h1 data-i18n="onboarding.title">Hi. I'm Vector.</h1>
-        <p data-i18n="onboarding.text">A small program with a face...</p>
+        <h1 data-i18n="onboarding.title">Hi. I'm a small program.</h1>
+        <p data-i18n="onboarding.text">I have a face, I listen, I type, and I never speak aloud.</p>
         <div class="onboard-label" data-i18n="onboarding.language">Language</div>
         <div class="choice-row" id="onboard-lang">
           <button type="button" class="choice active" data-lang="en">English</button>
@@ -172,16 +172,16 @@
       </section>
 
       <section class="onboard-step" data-step="3" hidden>
-        <h2 data-i18n="onboarding.style">How should I look?</h2>
-        <div class="choice-row three" id="onboard-style">
-          <button type="button" class="choice style-choice active" data-face-style="original">
-            <span class="style-face">▪‿▪</span>
-            <b data-i18n="settings.character.original">Original 12×12</b>
-          </button>
-          <button type="button" class="choice style-choice" data-face-style="pixel">
-            <span class="style-face small">▪‿▪</span>
-            <b data-i18n="settings.character.pixel">Refined 16×16</b>
-          </button>
+        <h2 data-i18n="onboarding.character">Who should I be?</h2>
+        <p data-i18n="onboarding.characterText">Choose a character pack. You can change this later in Settings.</p>
+        <div class="pack-grid" id="onboard-packs"></div>
+        <div class="custom-pack" id="onboard-custom" hidden>
+          <div class="onboard-label" data-i18n="onboarding.customName">Name</div>
+          <input class="text-input" id="onboard-custom-name" type="text" maxlength="40" autocomplete="off" />
+          <div class="onboard-label" data-i18n="onboarding.customSkin">Skin</div>
+          <select class="select-input" id="onboard-custom-skin"></select>
+          <div class="onboard-label" data-i18n="onboarding.customPrompt">System prompt</div>
+          <textarea class="text-area" id="onboard-custom-prompt" rows="4" maxlength="2400"></textarea>
         </div>
         <div class="onboard-label" data-i18n="onboarding.theme">Room</div>
         <div class="choice-row" id="onboard-theme">

@@ -29,9 +29,9 @@ from .config import (
     settings_for_client,
 )
 from .dialogue import ConversationStore, TurnManager
+from .characters import character_payload
 from .emotions import EMOTIONS, emotion_payload
 from .llm import LLMRouter
-from .prompts import PERSONA_PRESETS
 
 LOG = logging.getLogger("vector")
 
@@ -291,10 +291,7 @@ class AppState:
             "health": self.health_cache,
             "asr": self.asr.status(),
             "emotions": emotion_payload(),
-            "presets": [
-                {"id": k, "name": v["name"], "en": v["en"], "ru": v["ru"]}
-                for k, v in PERSONA_PRESETS.items()
-            ],
+            "characters": character_payload(),
             "input_modes": ["silence", "hotkey", "auto"],
             "server": {
                 "started_at": self.started_at,
@@ -429,13 +426,15 @@ async def models() -> dict[str, Any]:
         return {"ok": False, "error": str(exc), "models": [], "active": state.llm.model}
 
 
+@app.get("/api/characters")
+async def characters() -> dict[str, Any]:
+    return character_payload()
+
+
 @app.get("/api/presets")
 async def presets() -> dict[str, Any]:
     return {
-        "personas": [
-            {"id": k, "name": v["name"], "en": v["en"], "ru": v["ru"], "prompt": v["prompt"]}
-            for k, v in PERSONA_PRESETS.items()
-        ],
+        "characters": character_payload(),
         "emotions": emotion_payload(),
         "defaults": settings_for_client(DEFAULTS),
     }

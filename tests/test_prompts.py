@@ -34,6 +34,38 @@ def test_custom_persona():
     assert "butterflies" in prompt
 
 
+def test_builtin_pack_prompts():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["character"]["pack"] = "moss"
+    assert "MOSS" in build_system_prompt(settings)
+    settings["character"]["pack"] = "lumen"
+    assert "Lumen" in build_system_prompt(settings)
+
+
+def test_custom_pack_prompt_is_used_as_base():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["character"]["pack"] = "custom"
+    settings["character"]["custom"] = {
+        "name": "Orbit",
+        "prompt": "You are Orbit, a quiet librarian of small facts.",
+        "skin": "lumen16",
+        "palette": "mono",
+    }
+    prompt = build_system_prompt(settings)
+    assert "quiet librarian" in prompt
+    assert "Your name is Orbit" not in prompt
+    assert "EMOTION TAGS" in prompt
+
+
+def test_pack_name_changes_when_persona_name_overrides():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["character"]["pack"] = "lumen"
+    settings["persona"]["name"] = "Nova"
+    prompt = build_system_prompt(settings)
+    assert "Lumen" in prompt
+    assert "Your name is Nova" in prompt
+
+
 def test_proactive_instruction():
     text = proactive_instruction(copy.deepcopy(DEFAULTS), 120)
     assert "quiet" in text

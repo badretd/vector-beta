@@ -73,6 +73,12 @@ const PRESETS = {
   processing: { eyeShape: "half", brow: 0.2, mouth: 0, mouthWidth: 0.75, dots: 1, tilt: -0.6, glow: 1.15 },
 };
 
+export const SKINS = {
+  vector12: { id: "vector12", grid: 12, en: "Original 12×12", ru: "Оригинальный 12×12" },
+  lumen16: { id: "lumen16", grid: 16, en: "Detailed 16×16", ru: "Детальный 16×16" },
+  moss14: { id: "moss14", grid: 14, en: "CRT 14×14", ru: "ЭЛТ 14×14" },
+};
+
 export const PALETTES = {
   mono: {
     ink: "#f2f2f2", inkSoft: "#8a8a8a", pupil: "#000000", mouth: "#f2f2f2",
@@ -106,8 +112,9 @@ export class Character {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d", { alpha: true });
-    this.style = options.style === "pixel" ? "pixel" : "original";
-    this.grid = this.style === "original" ? 12 : 16;
+    const requestedSkin = options.skin || (options.style === "pixel" ? "lumen16" : "vector12");
+    this.skin = SKINS[requestedSkin] ? requestedSkin : "vector12";
+    this.grid = SKINS[this.skin].grid;
     this.cell = 16;
     this.palette = { ...PALETTES[options.paletteName || "mono"], ...(options.palette || {}) };
     this.opts = {
@@ -172,12 +179,17 @@ export class Character {
     window.removeEventListener("pointerleave", this._onPointerLeave);
   }
 
-  setStyle(style) {
-    const next = style === "pixel" ? "pixel" : "original";
-    if (next === this.style) return;
-    this.style = next;
-    this.grid = next === "original" ? 12 : 16;
+  setSkin(skin) {
+    const next = SKINS[skin] ? skin : "vector12";
+    if (next === this.skin) return;
+    this.skin = next;
+    this.grid = SKINS[next].grid;
     this._resizeCanvas();
+  }
+
+  // Kept for older callers and the ?style= lab links.
+  setStyle(style) {
+    this.setSkin(style === "pixel" ? "lumen16" : "vector12");
   }
 
   setPalette(nameOrPalette, overrides = {}) {
@@ -446,18 +458,19 @@ export class Character {
     ctx.save();
     ctx.translate(this.tiltPx + shakeX, this.bob + shakeY);
 
-    if (this.style === "original") this.drawOriginal();
-    else this.drawPixel();
+    if (this.skin === "vector12") this.drawVector12();
+    else if (this.skin === "moss14") this.drawMoss();
+    else this.drawLumen();
 
     ctx.restore();
 
     this.drawParticles();
-    if (this.style === "pixel" && p.glitch > 0.12) this.drawGlitch();
+    if (this.skin !== "vector12" && p.glitch > 0.12) this.drawGlitch();
   }
 
   // -- high-level face styles -------------------------------------------
 
-  drawPixel() {
+  drawLumen() {
     this.drawAntenna();
     this.drawEyes(16);
     this.drawBrows();
@@ -465,6 +478,7 @@ export class Character {
     this.drawBlush(16);
     this.drawTears(16);
     this.drawSweat(16);
+    this.drawConstellation();
     this.drawSparkles();
     this.drawHearts();
     this.drawZzz();
@@ -474,7 +488,7 @@ export class Character {
     this.drawDots();
   }
 
-  drawOriginal() {
+  drawVector12() {
     // The original 12×12 sprite is deliberately spare: two eyes and a mouth.
     // Keep it that way. The animation lives in the gaze, blink, and mouth.
     if (this.emotion === "laugh" && this.state !== "speaking") {
@@ -483,6 +497,165 @@ export class Character {
     }
     this.drawEyes(12);
     this.drawOriginalMouth();
+  }
+
+  drawMoss() {
+    // A small CRT terminal: square phosphor eyes, a dim bezel, a flat mouth,
+    // and a single status LED. It shares the same pose parameters as the others.
+    this.drawMossBezel();
+    this.drawMossScanline();
+    this.drawMossLed();
+    this.drawMossMouth();
+    this.drawMossBlush();
+    this.drawTears(14);
+    this.drawSweat(14);
+    this.drawHearts();
+    this.drawZzz();
+    this.drawSteam();
+    this.drawQuestion();
+    this.drawExclaim();
+    this.drawDots();
+    this.drawMossEyes();
+    this.drawMossBrows();
+  }
+
+  // -- MOSS: a small CRT terminal ---------------------------------------
+
+  drawMossBezel() {
+    const c = this.palette.inkSoft;
+    this.px(1, 1, 12, 1, c, 0.2);
+    this.px(1, 12, 12, 1, c, 0.2);
+    this.px(1, 1, 1, 12, c, 0.2);
+    this.px(12, 1, 1, 12, c, 0.2);
+    // Corner notches keep it from reading as a plain rectangle.
+    this.px(1, 1, 1, 1, c, 0.08);
+    this.px(12, 1, 1, 1, c, 0.08);
+    this.px(1, 12, 1, 1, c, 0.08);
+    this.px(12, 12, 1, 1, c, 0.08);
+  }
+
+  drawMossScanline() {
+    if (this.opts.reducedMotion) {
+      this.px(3, 7, 8, 1, this.palette.ink, 0.03);
+      return;
+    }
+    const y = 2 + Math.floor(((this.t * 1.4) % 9));
+    this.px(3, y, 8, 1, this.palette.ink, 0.045);
+  }
+
+  drawMossLed() {
+    const pulse = this.opts.reducedMotion ? 0.7 : 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(this.t * 2.4));
+    this.px(7, 1, 1, 1, this.palette.inkSoft, 0.7);
+    this.px(7, 0, 1, 1, this.palette.accent, 0.55 + 0.4 * pulse);
+    if (this.opts.glow) this.px(6, 0, 3, 2, this.palette.accent, 0.06 * pulse);
+  }
+
+  drawMossEyes() {
+    const p = this.params;
+    const open = clamp(p.eyeOpen * (1 - this.blink), 0, 1.6);
+    const lookX = Math.round(clamp(this.look.x, -1, 1));
+    const lookY = Math.round(clamp(this.look.y, -1, 1));
+    const shape = p.eyeShape;
+    const ink = this.palette.ink;
+    const pupil = this.palette.pupil;
+
+    const drawOne = (x, y, side) => {
+      if (shape === "heart") {
+        this.smallHeart(x - 1, y - 1, this.palette.blush, 0.95);
+        return;
+      }
+      if (shape === "x") {
+        for (let i = -1; i <= 2; i++) {
+          this.px(x + i, y + i - 1, 1, 1, ink);
+          this.px(x + i, y + 2 - i, 1, 1, ink);
+        }
+        return;
+      }
+      if (shape === "happy") {
+        this.px(x, y + 1, 2, 1, ink);
+        this.px(x - 1, y, 1, 1, ink, 0.9);
+        this.px(x + 2, y, 1, 1, ink, 0.9);
+        return;
+      }
+      if (shape === "wink" && side === "right") {
+        this.px(x, y + 1, 2, 1, ink, 0.95);
+        return;
+      }
+      if (shape === "half" || shape === "squint" || open < 0.32 || this.state === "sleeping") {
+        this.px(x, y + 1, 2, 1, ink, 0.95);
+        return;
+      }
+      const h = open > 1.25 ? 3 : 2;
+      const top = open > 1.25 ? y - 1 : y;
+      this.px(x, top, 2, h, ink, 0.96);
+      const py = top + (h > 2 ? 1 : 0) + (lookY > 0 ? 1 : 0);
+      this.px(x + (lookX > 0 ? 1 : 0), clamp(py, top, top + h - 1), 1, 1, pupil, 0.96);
+      this.px(x, top, 1, 1, "#ffffff", 0.22);
+    };
+
+    drawOne(4, 4, "left");
+    drawOne(8, 4, "right");
+  }
+
+  drawMossBrows() {
+    const p = this.params;
+    const lift = p.brow * 0.6;
+    const inner = p.browInner * 0.6;
+    const draw = (x0, x1, side, bias = 0) => {
+      const innerX = side === "left" ? x1 : x0;
+      const outerX = side === "left" ? x0 : x1;
+      for (let i = 0; i <= 2; i++) {
+        const f = i / 2;
+        const x = Math.round(outerX + (innerX - outerX) * f);
+        const y = Math.max(2, Math.min(3, Math.round(3 - lift - inner * f + bias)));
+        this.px(x, y, 1, 1, this.palette.ink, 0.58);
+      }
+    };
+    draw(3, 5, "left", 0);
+    draw(9, 11, "right", -0.55);
+  }
+
+  drawMossMouth() {
+    const p = this.params;
+    const cx = 7;
+    const cy = 9;
+    const half = clamp(Math.round(2 + (p.mouthWidth - 1) * 2), 2, 4);
+    const open = clamp(p.mouthOpen, 0, 1);
+    const color = this.palette.mouth;
+
+    if (open > 0.15) {
+      const h = 1 + Math.round(open * 2);
+      this.px(cx - half, cy, half * 2, h, color, 0.9);
+      this.px(cx - half + 1, cy + 1, Math.max(1, half * 2 - 2), Math.max(1, h - 1), this.palette.pupil, 0.85);
+      return;
+    }
+
+    const curve = p.mouth * 1.2;
+    for (let x = cx - half; x <= cx + half; x++) {
+      const f = 1 - Math.pow((x - cx) / half, 2);
+      this.px(x, Math.round(cy + curve * f), 1, 1, color, 0.92);
+    }
+    if (p.mouth > 0.45) {
+      this.px(cx - half - 1, cy - 1, 1, 1, color, 0.5);
+      this.px(cx + half + 1, cy - 1, 1, 1, color, 0.5);
+    }
+  }
+
+  drawMossBlush() {
+    const p = this.params;
+    if (p.blush < 0.05) return;
+    const a = p.blush;
+    this.px(2, 8, 2, 1, this.palette.blush, 0.32 * a);
+    this.px(10, 8, 2, 1, this.palette.blush, 0.32 * a);
+  }
+
+  drawConstellation() {
+    const spots = [[2, 3, 0], [13, 4, 1.6], [2, 12, 3.1], [12, 2, 4.4], [7, 1, 2.2], [14, 8, 5.2]];
+    const base = this.opts.particles ? 0.55 : 0.32;
+    for (const [x, y, phase] of spots) {
+      const pulse = 0.35 + 0.65 * Math.max(0, Math.sin(this.t * 2.2 + phase));
+      this.px(x, y, 1, 1, this.palette.sparkle, base * pulse);
+    }
   }
 
   drawOriginalLaugh() {
@@ -640,9 +813,10 @@ export class Character {
         return;
       }
       if (shape === "happy") {
-        this.px(x - 1, y + 1, 3, 1, this.palette.ink);
-        this.px(x - 2, y, 1, 1, this.palette.ink);
-        this.px(x + 2, y, 1, 1, this.palette.ink);
+        // A small upward arc, not a shared monobrow: two pixels of lid and one
+        // raised outer corner.
+        this.px(x, y + 1, 2, 1, this.palette.ink);
+        this.px(x + (side === "left" ? -1 : 2), y, 1, 1, this.palette.ink, 0.9);
         return;
       }
       if (shape === "wink" && side === "right") {
@@ -734,7 +908,7 @@ export class Character {
       return;
     }
 
-    const curve = p.mouth * (original ? 1.8 : 2.8);
+    const curve = p.mouth * (original ? 1.8 : 1.35);
     const wave = p.mouthWave * Math.sin(this.t * 6.5) * 0.5;
     for (let x = left; x <= right; x++) {
       const f = 1 - Math.pow((x - cx) / Math.max(1, half), 2);
@@ -762,12 +936,11 @@ export class Character {
       return;
     }
     const cheek = (x, y) => {
-      this.px(x, y, 3, 1, this.palette.blush, 0.38 * a);
-      this.px(x + 1, y + 1, 2, 1, this.palette.blush, 0.5 * a);
-      this.px(x + 3, y, 1, 1, this.palette.blush, 0.24 * a);
+      this.px(x, y, 2, 1, this.palette.blush, 0.22 * a);
+      this.px(x + 1, y + 1, 1, 1, this.palette.blush, 0.3 * a);
     };
-    cheek(2, 9);
-    cheek(11, 9);
+    cheek(2, 8);
+    cheek(grid >= 16 ? 12 : 10, 8);
   }
 
   drawTears(grid) {
@@ -790,7 +963,7 @@ export class Character {
     const p = this.params;
     if (p.sweat < 0.08) return;
     const a = clamp(p.sweat, 0, 1);
-    const x = grid === 12 ? 10 : 13;
+    const x = grid === 12 ? 10 : grid - 3;
     const y = 4 + Math.sin(this.t * 3) * 0.5;
     this.px(x, y, 1, 2, this.palette.tear, 0.75 * a);
     this.px(x + 1, y + 1, 1, 1, this.palette.tear, 0.45 * a);
