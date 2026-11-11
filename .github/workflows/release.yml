@@ -168,7 +168,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          # macOS 14 images were retired on 2026-11-02. macOS 15 is the current
+          # arm64 image; macos-15-intel is its x86_64 counterpart.
+          - runner: macos-15
             arch: arm64
           - runner: macos-15-intel
             arch: x86_64

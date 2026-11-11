@@ -334,10 +334,12 @@ git show v0.1.0:.github/workflows/release.yml >/dev/null && echo present
 **`Tag version ... does not match vector.__version__`.** Bump
 `vector/__init__.py`, commit, delete the tag, and push it again.
 
-**`macos-15-intel` runner is unavailable.** GitHub has changed Intel macOS
-runner labels over time. Replace that matrix entry with an available Intel
-label, or remove it and publish only Apple Silicon. The workflow does not use
-cross-compilation; an Intel build must run on an Intel runner.
+**A macOS job is cancelled immediately.** GitHub rotates macOS runner images.
+macOS 14 images were retired on 2026-11-02, so the arm64 job uses `macos-15`
+and the Intel job uses `macos-15-intel`. Check the
+[runner-images README](https://github.com/actions/runner-images#available-images)
+for the current labels and update the matrix. The workflow does not
+cross-compile: an Intel build must run on an Intel runner.
 
 **Windows self-test reports a missing DLL.** Inspect
 `dist\Vector\_internal`. The build is one-folder on purpose; do not switch to
