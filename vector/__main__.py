@@ -17,13 +17,26 @@ from pathlib import Path
 from . import __version__
 
 
-def _echo(message: str = "", *, err: bool = False) -> None:
-    """Print when stdio exists.
+def _ensure_std_streams() -> None:
+    """Replace missing stdio with a harmless sink.
 
-    PyInstaller's windowed builds set ``sys.stdout``/``sys.stderr`` to ``None``
-    on Windows.  The app is a windowed executable, so terminal output is a
-    convenience, not a requirement (everything important goes to the log).
+    PyInstaller's windowed builds (and ``pythonw.exe``) set ``sys.stdout`` and
+    ``sys.stderr`` to ``None`` on Windows.  Some libraries call methods such as
+    ``isatty()`` on those streams while configuring themselves; giving them a
+    real stream avoids crashes without changing where the app logs, because
+    Vector writes its own log file and in-app log separately.
     """
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            setattr(
+                sys,
+                name,
+                open(os.devnull, "w", encoding="utf-8", errors="replace"),
+            )
+
+
+def _echo(message: str = "", *, err: bool = False) -> None:
+    """Print when stdio exists (a windowed build may write to os.devnull)."""
     stream = sys.stderr if err else sys.stdout
     if stream is not None:
         print(message, file=stream)
@@ -200,6 +213,7 @@ def _run_self_test() -> int:
 
 
 def main(argv: list[str] | None = None) -> None:
+    _ensure_std_streams()
     parser = argparse.ArgumentParser(description="Vector — a small curious program")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -275,6 +289,10 @@ def main(argv: list[str] | None = None) -> None:
         host=args.host,
         port=args.port,
         log_level=(args.log_level or "warning").lower(),
+        # Vector installs its own file + in-app logging before this point.
+        # Uvicorn's dictConfig would replace it and its colour formatter calls
+        # sys.stdout.isatty(), which is exactly what windowed builds lack.
+        log_config=None,
         access_log=False,
     )
 

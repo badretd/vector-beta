@@ -34,6 +34,9 @@ The first packaged desktop release.
 
 ### Fixed
 
+- Windowed Windows builds no longer crash while uvicorn configures its logging
+  when `sys.stdout`/`sys.stderr` are unavailable. Uvicorn now uses Vector's own
+  file and in-app logging, and missing stdio is redirected to a safe sink.
 - Frozen builds no longer try to write into the installation directory, which
   is read-only under `Program Files` and macOS `/Applications`.
 - Chrome app-window mode no longer relies on Linux-only executable names on
