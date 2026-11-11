@@ -26,9 +26,12 @@ from .characters import (
     pack_for_legacy,
     resolve_character,
 )
+from .paths import resource_dir, writable_data_dir
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.environ.get("VECTOR_DATA_DIR", ROOT / "data")).expanduser()
+# Read-only resources (web UI, locales) live inside the bundle; mutable state
+# goes to a per-user directory.  See vector/paths.py.
+ROOT = resource_dir()
+DATA_DIR = writable_data_dir()
 WEB_DIR = ROOT / "web"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 HISTORY_PATH = DATA_DIR / "history.json"

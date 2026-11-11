@@ -5,3 +5,7 @@ __pycache__/
 data/
 *.log
 .DS_Store
+
+# Packaging output
+build/
+dist/

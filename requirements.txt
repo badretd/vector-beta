@@ -5,3 +5,4 @@ numpy>=1.26,<3
 faster-whisper==1.2.1
 av>=14,<19
 onnxruntime>=1.17,<2
+platformdirs>=4,<5

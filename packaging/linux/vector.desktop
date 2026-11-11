@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Vector
+GenericName=Local voice companion
+Comment=A small curious program that listens and types
+Exec=Vector
+Icon=vector
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+Keywords=voice;whisper;ollama;companion;
+StartupNotify=false
+StartupWMClass=Vector

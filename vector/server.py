@@ -86,11 +86,13 @@ def configure_logging(level: str = "INFO") -> None:
     fmt = logging.Formatter("%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")
     file_handler = logging.FileHandler(LOG_DIR / "vector.log", encoding="utf-8")
     file_handler.setFormatter(fmt)
-    stream = logging.StreamHandler(sys.stderr)
-    stream.setFormatter(fmt)
     LOG_HANDLER.setFormatter(logging.Formatter("%(message)s"))
     root.addHandler(file_handler)
-    root.addHandler(stream)
+    if sys.stderr is not None:
+        # Windowed PyInstaller builds have no stderr on Windows.
+        stream = logging.StreamHandler(sys.stderr)
+        stream.setFormatter(fmt)
+        root.addHandler(stream)
     root.addHandler(LOG_HANDLER)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

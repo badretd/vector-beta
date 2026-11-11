@@ -38,6 +38,28 @@ You do **not** need PortAudio or any native audio library: the browser captures 
 
 ---
 
+## Install a prebuilt release
+
+If you do not want to manage a Python environment, download the installer for
+your platform from the [latest release](https://github.com/badretd/vector-beta/releases/latest):
+
+| Platform | Download |
+| --- | --- |
+| Windows 10/11 (x64) | `Vector-x.y.z-windows-x64-Setup.exe` |
+| macOS 11+ (Apple Silicon) | `Vector-x.y.z-macos-arm64.dmg` |
+| macOS 11+ (Intel) | `Vector-x.y.z-macos-x86_64.dmg` |
+| Linux (x86_64) | `Vector-x.y.z-linux-x86_64.AppImage` |
+
+The installers include Python and all Python packages. You still need
+**Ollama** with a model, and a Chrome/Chromium/Edge browser for the app window.
+Follow the Ollama and language-model steps below; skip the Python steps.
+
+The first launch downloads the ~466 MB Whisper speech model. Settings, history
+and logs are stored in your per-user data folder, not in the installation
+directory.
+
+If you prefer to run from source, continue below.
+
 ## Installation, step by step
 
 The whole installation takes about **10–20 minutes**, mostly waiting for downloads. Do the steps in order. If a command is not recognised, see [If installation goes wrong](#if-installation-goes-wrong).
@@ -225,6 +247,8 @@ python -m vector --tab                 # open a normal browser tab
 python -m vector --port 9000
 python -m vector --demo                # offline demo companion (no Ollama)
 python -m vector --data-dir ./profile  # separate settings/history
+python -m vector --version             # print the version
+python -m vector --self-test           # verify a packaged build
 ```
 
 ### Updating Vector
@@ -420,7 +444,7 @@ The console can copy the current tab and download a JSON debug snapshot. Logs al
 
 - Microphone audio is sent only to the local server over `127.0.0.1`.
 - Whisper, Silero VAD, and Ollama run locally.
-- Settings, history, facts, study notes, vocabulary, and logs live in `data/`.
+- Settings, history, facts, study notes, vocabulary, and logs live in `data/` for a source checkout. Installed builds use `%LOCALAPPDATA%\Vector` on Windows, `~/Library/Application Support/Vector` on macOS, or `$XDG_DATA_HOME/Vector` on Linux.
 - The first model download contacts Hugging Face; after that, inference is offline.
 - The server binds to `127.0.0.1` by default. Do not expose it to a network without adding authentication.
 - There is no TTS code path. The only sounds are tiny optional synthesized UI blips.
@@ -434,6 +458,8 @@ pytest -q
 ```
 
 The suite covers the streaming emotion parser, aliases, auto-send scoring in both languages, config merging/validation, memory extraction, prompt compactness, ASR endpointing with a fake engine, and dialogue modes. Set `VECTOR_TEST_ASR=1` to run the real Whisper load test.
+
+Maintainers: see [`docs/RELEASING.md`](docs/RELEASING.md) for the tag-driven release process.
 
 ## If installation goes wrong
 
