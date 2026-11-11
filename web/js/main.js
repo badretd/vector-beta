@@ -17,8 +17,11 @@ const dom = {
   stage: $("stage"),
   micBtn: $("mic-btn"),
   langBtn: $("lang-btn"),
+  studyBtn: $("study-btn"),
+  studyMenu: $("study-menu"),
   historyBtn: $("history-btn"),
   settingsBtn: $("settings-btn"),
+  notesLayer: $("notes-layer"),
   character: $("character"),
   characterWrap: $("character-wrap"),
   statusLine: $("status-line"),
@@ -26,6 +29,15 @@ const dom = {
   hint: $("hint"),
   textStack: $("text-stack"),
   reply: $("reply"),
+  replyText: $("reply-text"),
+  replyFoot: $("reply-foot"),
+  replyPrev: $("reply-prev"),
+  replyNext: $("reply-next"),
+  replyPage: $("reply-page"),
+  replyDots: $("reply-dots"),
+  replyNew: $("reply-new"),
+  replyCopy: $("reply-copy"),
+  replyCopyAll: $("reply-copy-all"),
   input: $("input"),
   mode: $("mode"),
   pending: $("pending"),
@@ -38,6 +50,21 @@ const dom = {
   historyClose: $("history-close"),
   historyClear: $("history-clear"),
   historyExport: $("history-export"),
+  vocabDrawer: $("vocab-drawer"),
+  vocabClose: $("vocab-close"),
+  vocabForm: $("vocab-form"),
+  vocabTerm: $("vocab-term"),
+  vocabLanguage: $("vocab-language"),
+  vocabMeaning: $("vocab-meaning"),
+  vocabExample: $("vocab-example"),
+  vocabSave: $("vocab-save"),
+  vocabCancel: $("vocab-cancel"),
+  vocabSearch: $("vocab-search"),
+  vocabCount: $("vocab-count"),
+  vocabList: $("vocab-list"),
+  vocabEmpty: $("vocab-empty"),
+  vocabExportJson: $("vocab-export-json"),
+  vocabExportCsv: $("vocab-export-csv"),
   onboarding: $("onboarding"),
   onboardPanel: $("onboard-panel"),
   onboardStepCount: $("onboard-step-count"),
@@ -48,6 +75,8 @@ const dom = {
   onboardCustomSkin: $("onboard-custom-skin"),
   onboardCustomPrompt: $("onboard-custom-prompt"),
   onboardTheme: $("onboard-theme"),
+  onboardExperience: $("onboard-experience"),
+  onboardStudyWarning: $("onboard-study-warning"),
   onboardChecks: $("onboard-checks"),
   onboardRetry: $("onboard-retry"),
   onboardDemo: $("onboard-demo"),
@@ -68,11 +97,24 @@ const app = {
   server: {},
   version: "",
   history: { messages: [], facts: [], user_name: "" },
+  study: { notes: [], vocabulary: [] },
+  vocabEditing: null,
+  vocabFilter: "",
+  vocabSource: "",
+  lastSelection: "",
+  _studyVisible: false,
+  _noteEditing: false,
+  _noteDragging: false,
   status: "idle",
   micActive: false,
   generating: false,
   replyId: null,
   replyText: "",
+  replyPages: [""],
+  replyPage: 0,
+  replySeenPage: 0,
+  replyNewPage: false,
+  replyKind: "chat",
   replyDirty: false,
   pending: "",
   mode: "silence",
@@ -95,6 +137,10 @@ let socket = null;
 let reconnectTimer = 0;
 let reconnectDelay = 1000;
 let historyOpen = false;
+let vocabOpen = false;
+let studyMenuOpen = false;
+const noteSaveTimers = new Map();
+let noteResizeTimer = 0;
 let idleTimer = 0;
 let hintTimer = 0;
 let replyRaf = 0;
@@ -135,6 +181,42 @@ function companionName() {
   return app.settings?.persona?.name || pack?.name || "Vector";
 }
 
+function isStudyMode() {
+  return (app.settings?.experience?.mode || "conversation") === "study";
+}
+
+function noteFontStack(name) {
+  if (name === "serif") return 'Georgia, "Times New Roman", serif';
+  if (name === "mono") {
+    return 'ui-monospace, "SFMono-Regular", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace';
+  }
+  return 'Arial, "Helvetica Neue", system-ui, -apple-system, sans-serif';
+}
+
+function applyNoteStyle(experience = {}) {
+  const root = document.documentElement;
+  root.style.setProperty("--note-font", noteFontStack(experience.notes_font));
+  root.style.setProperty(
+    "--note-font-size",
+    `${Number(experience.notes_font_size) || 15}px`,
+  );
+  root.style.setProperty("--note-ink", experience.notes_ink || "#2b2118");
+}
+
+function updateStudyUI() {
+  const study = isStudyMode();
+  const wasStudy = app._studyVisible;
+  app._studyVisible = study;
+  if (dom.notesLayer) dom.notesLayer.hidden = !study;
+  if (!study) {
+    closeStudyMenu();
+    if (vocabOpen) closeVocabulary();
+  } else if (!wasStudy) {
+    renderNotes();
+    renderVocabulary();
+  }
+}
+
 function setGlow(id) {
   if (!dom.characterWrap) return;
   dom.characterWrap.style.setProperty("--face-glow", emotionColor(id));
@@ -154,7 +236,8 @@ function scheduleIdle() {
   document.body.classList.remove("idle");
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!app.settingsUI?.isOpen() && !historyOpen && !app.debugUI?.isOpen() && dom.onboarding.hidden) {
+    if (!app.settingsUI?.isOpen() && !historyOpen && !vocabOpen && !studyMenuOpen
+      && !app.debugUI?.isOpen() && dom.onboarding.hidden) {
       document.body.classList.add("idle");
     }
   }, 3200);
@@ -194,10 +277,10 @@ function showBackdrop() {
 }
 
 function hideBackdrop() {
-  if (app.settingsUI?.isOpen() || historyOpen) return;
+  if (app.settingsUI?.isOpen() || historyOpen || vocabOpen) return;
   dom.backdrop.classList.remove("open");
   setTimeout(() => {
-    if (!app.settingsUI?.isOpen() && !historyOpen) dom.backdrop.hidden = true;
+    if (!app.settingsUI?.isOpen() && !historyOpen && !vocabOpen) dom.backdrop.hidden = true;
   }, 280);
 }
 
@@ -210,6 +293,9 @@ function applySettings(settings, options = {}) {
   app.settings = settings;
   const root = document.documentElement;
   root.dataset.theme = settings.app.theme || "ink";
+  document.body.dataset.experience = settings.experience?.mode || "conversation";
+  applyNoteStyle(settings.experience || {});
+  updateStudyUI();
   root.style.setProperty("--ui-scale", String(settings.app.ui_scale ?? 1));
   root.style.setProperty("--face-scale", String(settings.face.scale ?? 1));
 
@@ -300,15 +386,17 @@ async function flushPatch() {
 
 async function reloadSettings() {
   try {
-    const [settingsRes, historyRes] = await Promise.all([
+    const [settingsRes, historyRes, studyRes] = await Promise.all([
       fetch("api/settings", { cache: "no-store" }),
       fetch("api/history", { cache: "no-store" }),
+      fetch("api/study", { cache: "no-store" }),
     ]);
     if (settingsRes.ok) applySettings(await settingsRes.json());
     if (historyRes.ok) {
       app.history = await historyRes.json();
       renderHistory();
     }
+    if (studyRes.ok) setStudy(await studyRes.json());
     app.settingsUI?.render();
   } catch (error) {
     toast(i18n.t("toast.error"), "error");
@@ -383,37 +471,92 @@ async function setMicDevice(deviceId) {
 // Text / reply
 // --------------------------------------------------------------------------
 
+function resetReplyPages() {
+  app.replyPages = [""];
+  app.replyPage = 0;
+  app.replySeenPage = 0;
+  app.replyNewPage = false;
+  app.replyKind = "chat";
+  app.replyText = "";
+}
+
 function setInputText(text) {
-  dom.reply.hidden = true;
-  dom.reply.textContent = "";
-  dom.input.hidden = false;
+  hideReply();
   dom.input.value = text || "";
   autoGrow();
   if (!app.userEditing) dom.input.scrollTop = dom.input.scrollHeight;
 }
 
-function showReply() {
+function showReply(kind = "chat") {
+  resetReplyPages();
+  app.replyKind = kind || "chat";
   dom.input.hidden = true;
   dom.reply.hidden = false;
-  dom.reply.textContent = "";
+  dom.replyText.textContent = "";
   dom.reply.classList.add("streaming");
-  dom.reply.scrollTop = 0;
+  dom.replyText.scrollTop = 0;
+  renderReplyPager();
 }
 
 function hideReply() {
   dom.reply.hidden = true;
-  dom.reply.textContent = "";
+  dom.replyText.textContent = "";
   dom.reply.classList.remove("streaming");
+  dom.replyFoot.hidden = true;
   dom.input.hidden = false;
+  resetReplyPages();
   autoGrow();
 }
 
-function renderReplyNow() {
+function lastReplyPage() {
+  return Math.max(0, app.replyPages.length - 1);
+}
+
+function setReplyPage(index, { resetScroll = true } = {}) {
+  const next = clamp(Number(index) || 0, 0, lastReplyPage());
+  if (next === app.replyPage && !resetScroll) return;
+  app.replyPage = next;
+  if (next > app.replySeenPage) app.replySeenPage = next;
+  app.replyNewPage = lastReplyPage() > app.replySeenPage;
+  app.replyDirty = true;
+  renderReplyNow({ resetScroll });
+}
+
+function jumpToNewReplyPage() {
+  setReplyPage(lastReplyPage());
+}
+
+function renderReplyPager() {
+  const count = Math.max(1, app.replyPages.length);
+  dom.replyFoot.hidden = count <= 1;
+  if (count <= 1) return;
+  dom.replyPage.textContent = `${app.replyPage + 1} / ${count}`;
+  dom.replyPrev.disabled = app.replyPage <= 0;
+  dom.replyNext.disabled = app.replyPage >= count - 1;
+  dom.replyNew.hidden = !app.replyNewPage;
+  dom.replyDots.textContent = "";
+  for (let index = 0; index < count; index += 1) {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "reply-dot" + (index === app.replyPage ? " active" : "");
+    dot.title = `${index + 1} / ${count}`;
+    dot.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setReplyPage(index);
+    });
+    dom.replyDots.appendChild(dot);
+  }
+}
+
+function renderReplyNow({ resetScroll = false } = {}) {
   cancelAnimationFrame(replyRaf);
   replyRaf = 0;
   if (dom.reply.hidden) return;
-  dom.reply.textContent = app.replyText;
-  dom.reply.scrollTop = dom.reply.scrollHeight;
+  const stick = dom.replyText.scrollHeight - dom.replyText.scrollTop - dom.replyText.clientHeight < 48;
+  dom.replyText.textContent = app.replyPages[app.replyPage] || "";
+  renderReplyPager();
+  if (resetScroll) dom.replyText.scrollTop = 0;
+  else if (stick) dom.replyText.scrollTop = dom.replyText.scrollHeight;
 }
 
 function scheduleReply() {
@@ -424,6 +567,44 @@ function scheduleReply() {
     app.replyDirty = false;
     renderReplyNow();
   });
+}
+
+function appendReplyDelta(page, text) {
+  const index = Number.isInteger(page) && page >= 0 ? page : 0;
+  while (app.replyPages.length <= index) app.replyPages.push("");
+  app.replyPages[index] = (app.replyPages[index] || "") + (text || "");
+  app.replyText = app.replyPages.join("\n\n").trim();
+  if (index > app.replySeenPage) app.replyNewPage = true;
+  if (index === app.replyPage) {
+    app.replyDirty = true;
+    scheduleReply();
+  } else {
+    renderReplyPager();
+  }
+}
+
+function setReplyPages(pages, fallbackText = "", kind = "chat") {
+  const list = Array.isArray(pages) && pages.length
+    ? pages.map((page) => String(page || ""))
+    : [String(fallbackText || "")];
+  app.replyPages = list;
+  app.replyKind = kind || app.replyKind;
+  app.replyPage = clamp(app.replyPage, 0, list.length - 1);
+  app.replySeenPage = Math.min(app.replySeenPage, list.length - 1);
+  app.replyNewPage = list.length - 1 > app.replySeenPage;
+  app.replyText = list.join("\n\n").trim();
+  app.replyDirty = true;
+  renderReplyNow();
+}
+
+async function copyReply(text) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(i18n.t("reply.copied"), "good");
+  } catch (error) {
+    toast(i18n.t("toast.error"), "error");
+  }
 }
 
 function submit() {
@@ -456,6 +637,7 @@ function submit() {
 }
 
 function onReplyClick(event) {
+  if (event.target.closest?.(".reply-foot")) return;
   event.stopPropagation();
   if (app.generating) {
     app.send({ type: "cancel" });
@@ -566,6 +748,12 @@ function renderHistory() {
     const when = document.createElement("span");
     when.textContent = formatTime(message.ts);
     meta.append(who, when);
+    if (message.kind === "study") {
+      const chip = document.createElement("span");
+      chip.className = "kind-chip";
+      chip.textContent = i18n.t("history.study");
+      meta.appendChild(chip);
+    }
 
     const body = document.createElement("div");
     body.className = "msg-body";
@@ -598,6 +786,8 @@ function renderHistory() {
 
 function openHistory() {
   if (app.settingsUI?.isOpen()) app.settingsUI.close();
+  if (vocabOpen) closeVocabulary();
+  closeStudyMenu();
   renderHistory();
   historyOpen = true;
   dom.historyDrawer.hidden = false;
@@ -625,6 +815,514 @@ async function clearHistory() {
   } catch (error) {
     toast(i18n.t("toast.error"), "error");
   }
+}
+
+// --------------------------------------------------------------------------
+// Study data: notes and vocabulary
+// --------------------------------------------------------------------------
+
+const NOTE_COLORS = ["amber", "mint", "rose", "paper"];
+
+async function apiJson(url, options = {}) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`request failed: ${res.status}`);
+  return res.json();
+}
+
+function setStudy(study) {
+  app.study = {
+    notes: Array.isArray(study?.notes) ? study.notes : [],
+    vocabulary: Array.isArray(study?.vocabulary) ? study.vocabulary : [],
+  };
+  if (!app._noteEditing && !app._noteDragging) renderNotes();
+  renderVocabulary();
+}
+
+function selectedStudyText() {
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed) return "";
+  const anchor = selection.anchorNode;
+  if (!anchor) return "";
+  const insideReply = dom.reply.contains(anchor);
+  const insideNotes = dom.notesLayer?.contains(anchor);
+  if (!insideReply && !insideNotes) return "";
+  return selection.toString().replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+function noteGeometry(note) {
+  const rect = dom.notesLayer?.getBoundingClientRect();
+  const width = rect ? rect.width : 0;
+  const height = rect ? rect.height : 0;
+  const available = Math.max(120, width - 16);
+  const noteWidth = clamp(Number(note.width) || 220, 120, Math.min(480, available));
+  const maxLeft = Math.max(8, width - noteWidth - 8);
+  const left = clamp(((Number(note.x) || 0) / 100) * width, 8, maxLeft);
+  const maxTop = Math.max(56, height - 150);
+  const top = clamp(((Number(note.y) || 0) / 100) * height, 56, maxTop);
+  return { width: noteWidth, left, top };
+}
+
+function growNoteBody(body) {
+  body.style.height = "auto";
+  body.style.height = `${Math.min(body.scrollHeight, 240)}px`;
+}
+
+function iconNode(id) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${id}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function clearNoteTimer(noteId) {
+  const pending = noteSaveTimers.get(noteId);
+  if (pending?.timer) clearTimeout(pending.timer);
+  noteSaveTimers.delete(noteId);
+}
+
+async function saveNoteNow(note, patch) {
+  const pending = noteSaveTimers.get(note.id);
+  let payload = patch;
+  if (pending) {
+    clearTimeout(pending.timer);
+    noteSaveTimers.delete(note.id);
+    payload = { ...pending.patch, ...patch };
+  }
+  Object.assign(note, payload);
+  try {
+    const saved = await apiJson(`api/notes/${note.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    Object.assign(note, saved);
+  } catch (error) {
+    toast(i18n.t("toast.error"), "error");
+  }
+}
+
+function queueNotePatch(note, patch) {
+  Object.assign(note, patch);
+  const pending = noteSaveTimers.get(note.id) || { timer: 0, patch: {} };
+  if (pending.timer) clearTimeout(pending.timer);
+  pending.patch = { ...pending.patch, ...patch };
+  pending.timer = setTimeout(async () => {
+    noteSaveTimers.delete(note.id);
+    try {
+      const saved = await apiJson(`api/notes/${note.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(pending.patch),
+      });
+      Object.assign(note, saved);
+    } catch (error) {
+      toast(i18n.t("toast.error"), "error");
+    }
+  }, 350);
+  noteSaveTimers.set(note.id, pending);
+}
+
+function bindNoteDrag(note, element, handle) {
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    event.preventDefault();
+    const layerRect = dom.notesLayer.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    const offsetX = event.clientX - box.left;
+    const offsetY = event.clientY - box.top;
+    app._noteDragging = true;
+    element.classList.add("dragging");
+    handle.setPointerCapture?.(event.pointerId);
+
+    const onMove = (moveEvent) => {
+      const left = clamp(
+        moveEvent.clientX - layerRect.left - offsetX,
+        8,
+        Math.max(8, layerRect.width - box.width - 8),
+      );
+      const top = clamp(
+        moveEvent.clientY - layerRect.top - offsetY,
+        56,
+        Math.max(56, layerRect.height - 120),
+      );
+      element.style.left = `${left}px`;
+      element.style.top = `${top}px`;
+    };
+
+    const finish = async () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", finish);
+      handle.removeEventListener("pointercancel", finish);
+      element.classList.remove("dragging");
+      app._noteDragging = false;
+      const left = parseFloat(element.style.left) || 0;
+      const top = parseFloat(element.style.top) || 0;
+      const x = layerRect.width ? clamp((left / layerRect.width) * 100, 0, 100) : note.x;
+      const y = layerRect.height ? clamp((top / layerRect.height) * 100, 0, 100) : note.y;
+      await saveNoteNow(note, { x, y });
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", finish);
+  });
+}
+
+function buildNoteElement(note) {
+  const element = document.createElement("article");
+  element.className = `note ${note.color || "amber"}`;
+  element.dataset.noteId = note.id;
+  const geometry = noteGeometry(note);
+  element.style.width = `${geometry.width}px`;
+  element.style.left = `${geometry.left}px`;
+  element.style.top = `${geometry.top}px`;
+
+  const head = document.createElement("div");
+  head.className = "note-head";
+  const grip = document.createElement("span");
+  grip.className = "note-grip";
+  grip.title = i18n.t("notes.drag");
+
+  const share = document.createElement("button");
+  share.type = "button";
+  share.className = "note-btn" + (note.share ? " active" : "");
+  share.title = i18n.t(note.share ? "notes.sharedOn" : "notes.sharedOff");
+  share.setAttribute("aria-pressed", String(Boolean(note.share)));
+  share.appendChild(iconNode("i-pin"));
+  share.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    note.share = !note.share;
+    share.classList.toggle("active", note.share);
+    share.title = i18n.t(note.share ? "notes.sharedOn" : "notes.sharedOff");
+    share.setAttribute("aria-pressed", String(note.share));
+    await saveNoteNow(note, { share: note.share });
+  });
+
+  const color = document.createElement("button");
+  color.type = "button";
+  color.className = "note-btn note-color";
+  color.title = i18n.t("notes.color");
+  const colorDot = document.createElement("span");
+  color.appendChild(colorDot);
+  color.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const index = NOTE_COLORS.indexOf(note.color);
+    const next = NOTE_COLORS[(index + 1) % NOTE_COLORS.length];
+    note.color = next;
+    element.className = `note ${next}`;
+    await saveNoteNow(note, { color: next });
+  });
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "note-btn";
+  remove.title = i18n.t("notes.delete");
+  remove.appendChild(iconNode("i-trash"));
+  remove.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (!window.confirm(i18n.t("notes.deleteConfirm"))) return;
+    clearNoteTimer(note.id);
+    try {
+      await apiJson(`api/notes/${note.id}`, { method: "DELETE" });
+      app.study.notes = app.study.notes.filter((item) => item.id !== note.id);
+      renderNotes();
+    } catch (error) {
+      toast(i18n.t("toast.error"), "error");
+    }
+  });
+
+  head.append(grip, share, color, remove);
+
+  const body = document.createElement("textarea");
+  body.className = "note-body";
+  body.value = note.text || "";
+  body.placeholder = i18n.t("notes.placeholder");
+  body.spellcheck = true;
+  body.addEventListener("focus", () => {
+    app._noteEditing = true;
+  });
+  body.addEventListener("blur", () => {
+    app._noteEditing = false;
+    if (noteSaveTimers.has(note.id)) saveNoteNow(note, { text: body.value });
+  });
+  body.addEventListener("input", () => {
+    note.text = body.value;
+    growNoteBody(body);
+    queueNotePatch(note, { text: body.value });
+  });
+  body.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") body.blur();
+  });
+
+  element.append(head, body);
+  bindNoteDrag(note, element, head);
+  requestAnimationFrame(() => growNoteBody(body));
+  return element;
+}
+
+function renderNotes() {
+  if (!dom.notesLayer) return;
+  dom.notesLayer.textContent = "";
+  if (!isStudyMode()) return;
+  for (const note of app.study.notes) {
+    dom.notesLayer.appendChild(buildNoteElement(note));
+  }
+}
+
+async function addNote({ text = "", share = false } = {}) {
+  if (!isStudyMode() || !dom.notesLayer) return;
+  const rect = dom.notesLayer.getBoundingClientRect();
+  const count = app.study.notes.length;
+  const width = clamp(220, 160, Math.min(480, Math.max(160, rect.width - 16)));
+  const x = count % 2 === 0 ? 6 : 62;
+  const y = 16 + (count % 4) * 10;
+  try {
+    const note = await apiJson("api/notes", {
+      method: "POST",
+      body: JSON.stringify({
+        text,
+        x,
+        y,
+        width,
+        color: app.settings?.experience?.notes_color || "amber",
+        share,
+      }),
+    });
+    const index = app.study.notes.findIndex((item) => item.id === note.id);
+    if (index >= 0) app.study.notes[index] = note;
+    else app.study.notes.push(note);
+    renderNotes();
+    const body = dom.notesLayer.querySelector(`[data-note-id="${note.id}"] .note-body`);
+    body?.focus();
+    body?.scrollIntoView({ block: "nearest" });
+  } catch (error) {
+    toast(i18n.t("toast.error"), "error");
+  }
+}
+
+function upsertWord(word) {
+  const index = app.study.vocabulary.findIndex((item) => item.id === word.id);
+  if (index >= 0) app.study.vocabulary[index] = word;
+  else app.study.vocabulary.push(word);
+}
+
+function resetVocabForm() {
+  app.vocabEditing = null;
+  app.vocabSource = "";
+  dom.vocabTerm.value = "";
+  dom.vocabLanguage.value = "";
+  dom.vocabMeaning.value = "";
+  dom.vocabExample.value = "";
+  dom.vocabSave.textContent = i18n.t("vocab.add");
+  dom.vocabCancel.hidden = true;
+}
+
+function buildVocabItem(word) {
+  const item = document.createElement("article");
+  item.className = "vocab-item";
+  const head = document.createElement("div");
+  head.className = "vocab-item-head";
+  const term = document.createElement("span");
+  term.className = "vocab-term";
+  term.textContent = word.term;
+  head.appendChild(term);
+  if (word.language) {
+    const lang = document.createElement("span");
+    lang.className = "vocab-lang";
+    lang.textContent = word.language;
+    head.appendChild(lang);
+  }
+  if (word.created_at) {
+    const when = document.createElement("span");
+    when.className = "vocab-date";
+    when.textContent = new Date(word.created_at * 1000).toLocaleDateString();
+    head.appendChild(when);
+  }
+  const actions = document.createElement("span");
+  actions.className = "vocab-item-actions";
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.textContent = i18n.t("vocab.edit");
+  edit.addEventListener("click", () => {
+    app.vocabEditing = word.id;
+    app.vocabSource = word.source || "";
+    dom.vocabTerm.value = word.term || "";
+    dom.vocabLanguage.value = word.language || "";
+    dom.vocabMeaning.value = word.meaning || "";
+    dom.vocabExample.value = word.example || "";
+    dom.vocabSave.textContent = i18n.t("vocab.save");
+    dom.vocabCancel.hidden = false;
+    dom.vocabTerm.focus();
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.textContent = "×";
+  remove.title = i18n.t("vocab.delete");
+  remove.addEventListener("click", async () => {
+    if (!window.confirm(i18n.t("vocab.deleteConfirm"))) return;
+    try {
+      await apiJson(`api/vocabulary/${word.id}`, { method: "DELETE" });
+      app.study.vocabulary = app.study.vocabulary.filter((entry) => entry.id !== word.id);
+      if (app.vocabEditing === word.id) resetVocabForm();
+      renderVocabulary();
+    } catch (error) {
+      toast(i18n.t("toast.error"), "error");
+    }
+  });
+  actions.append(edit, remove);
+  head.appendChild(actions);
+  item.appendChild(head);
+
+  if (word.meaning) {
+    const meaning = document.createElement("div");
+    meaning.className = "vocab-meaning";
+    meaning.textContent = word.meaning;
+    item.appendChild(meaning);
+  }
+  if (word.example) {
+    const example = document.createElement("div");
+    example.className = "vocab-example";
+    example.textContent = word.example;
+    item.appendChild(example);
+  }
+  return item;
+}
+
+function renderVocabulary() {
+  if (!dom.vocabList) return;
+  const filter = (app.vocabFilter || "").trim().toLowerCase();
+  const words = [...(app.study.vocabulary || [])].sort((a, b) => (
+    String(a.term).localeCompare(String(b.term))
+  ));
+  const filtered = filter
+    ? words.filter((word) => `${word.term} ${word.language} ${word.meaning} ${word.example}`.toLowerCase().includes(filter))
+    : words;
+  dom.vocabList.textContent = "";
+  dom.vocabCount.textContent = i18n.t("vocab.count", { count: filtered.length });
+  dom.vocabEmpty.textContent = filter ? i18n.t("vocab.noMatches") : i18n.t("vocab.empty");
+  dom.vocabEmpty.classList.toggle("show", filtered.length === 0);
+  for (const word of filtered) dom.vocabList.appendChild(buildVocabItem(word));
+}
+
+function openVocabulary({ term = "", source = "" } = {}) {
+  if (app.settingsUI?.isOpen()) app.settingsUI.close();
+  if (historyOpen) closeHistory();
+  closeStudyMenu();
+  vocabOpen = true;
+  dom.vocabDrawer.hidden = false;
+  showBackdrop();
+  requestAnimationFrame(() => dom.vocabDrawer.classList.add("open"));
+  dom.vocabSearch.value = app.vocabFilter || "";
+  resetVocabForm();
+  app.vocabSource = source;
+  if (term) dom.vocabTerm.value = term;
+  renderVocabulary();
+  setTimeout(() => {
+    (term ? dom.vocabTerm : dom.vocabSearch).focus();
+  }, 180);
+}
+
+function closeVocabulary() {
+  if (!vocabOpen) return;
+  vocabOpen = false;
+  dom.vocabDrawer.classList.remove("open");
+  hideBackdrop();
+  resetVocabForm();
+  setTimeout(() => {
+    if (!vocabOpen) dom.vocabDrawer.hidden = true;
+  }, 320);
+}
+
+async function saveVocabulary() {
+  const term = dom.vocabTerm.value.trim();
+  if (!term) {
+    toast(i18n.t("vocab.termRequired"), "error");
+    dom.vocabTerm.focus();
+    return;
+  }
+  const payload = {
+    term,
+    meaning: dom.vocabMeaning.value.trim(),
+    example: dom.vocabExample.value.trim(),
+    language: dom.vocabLanguage.value.trim(),
+    source: app.vocabSource,
+  };
+  try {
+    const word = app.vocabEditing
+      ? await apiJson(`api/vocabulary/${app.vocabEditing}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      })
+      : await apiJson("api/vocabulary", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    upsertWord(word);
+    resetVocabForm();
+    renderVocabulary();
+    toast(i18n.t("vocab.saved"), "good");
+  } catch (error) {
+    toast(i18n.t("toast.error"), "error");
+  }
+}
+
+function downloadText(filename, text, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function exportVocabularyJson() {
+  downloadText(
+    "vector-vocabulary.json",
+    JSON.stringify(app.study.vocabulary || [], null, 2),
+    "application/json",
+  );
+  toast(i18n.t("toast.exported"), "good");
+}
+
+function exportVocabularyCsv() {
+  const rows = [["term", "meaning", "example", "language", "created_at"]];
+  for (const word of app.study.vocabulary || []) {
+    rows.push([word.term, word.meaning, word.example, word.language, word.created_at]);
+  }
+  const text = `\ufeff${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+  downloadText("vector-vocabulary.csv", text, "text/csv");
+  toast(i18n.t("toast.exported"), "good");
+}
+
+function toggleStudyMenu(force) {
+  if (!isStudyMode()) return;
+  const next = typeof force === "boolean" ? force : !studyMenuOpen;
+  studyMenuOpen = next;
+  if (dom.studyMenu) dom.studyMenu.hidden = !next;
+}
+
+function closeStudyMenu() {
+  if (!studyMenuOpen) return;
+  studyMenuOpen = false;
+  if (dom.studyMenu) dom.studyMenu.hidden = true;
+}
+
+function handleStudyAction(action) {
+  closeStudyMenu();
+  if (action === "note") addNote();
+  else if (action === "word") {
+    const term = selectedStudyText() || app.lastSelection || "";
+    app.lastSelection = "";
+    openVocabulary({ term, source: term ? "selection" : "" });
+  } else if (action === "vocabulary") openVocabulary();
+  else if (action === "settings") openSettings("study");
 }
 
 // --------------------------------------------------------------------------
@@ -693,6 +1391,7 @@ function applyHello(data) {
   app.server = data.server || {};
   app.version = data.version || "";
   app.history = data.history || { messages: [], facts: [], user_name: "" };
+  app.study = data.study || { notes: [], vocabulary: [] };
   if (Array.isArray(data.emotions) && data.emotions.length) app.emotions = data.emotions;
   if (app.generating) {
     app.generating = false;
@@ -703,6 +1402,8 @@ function applyHello(data) {
   applySettings(app.settings, { silent: true });
   app.debugUI?.setVersion(app.version);
   renderHistory();
+  renderNotes();
+  renderVocabulary();
   updateMode();
   setStatus("idle");
   const forceOnboarding = new URLSearchParams(location.search).has("onboarding");
@@ -786,9 +1487,8 @@ function handleEvent(data) {
     case "assistant_start":
       app.generating = true;
       app.replyId = data.id || null;
-      app.replyText = "";
       app.replyDirty = true;
-      showReply();
+      showReply(data.kind || "chat");
       setStatus("thinking");
       hideHint();
       document.body.classList.add("generating");
@@ -798,11 +1498,9 @@ function handleEvent(data) {
       if (!app.generating) break;
       if (data.id && app.replyId && data.id !== app.replyId) {
         app.replyId = data.id;
-        app.replyText = "";
+        resetReplyPages();
       }
-      app.replyText += data.text || "";
-      app.replyDirty = true;
-      scheduleReply();
+      appendReplyDelta(data.page, data.text || "");
       app.character?.setState("speaking");
       app.character?.setSpeaking(true);
       setStatus("speaking");
@@ -825,7 +1523,8 @@ function handleEvent(data) {
       app.generating = false;
       app.replyId = null;
       if (data.message) {
-        app.replyText = data.message.text || app.replyText;
+        const pages = data.message.meta?.pages;
+        setReplyPages(pages, data.message.text || "", data.message.kind || app.replyKind);
         addHistory(data.message);
       }
       app.replyDirty = true;
@@ -893,6 +1592,10 @@ function handleEvent(data) {
       app.settingsUI?.refreshFacts();
       break;
 
+    case "study_changed":
+      setStudy(data.study || { notes: [], vocabulary: [] });
+      break;
+
     case "user_emotion":
       app.character?.setEmotion(data.emotion, data.intensity || 0.6, 900, "user");
       addEmotionTimeline(data.emotion, "user");
@@ -948,6 +1651,8 @@ function refreshLabels() {
   if (app.status) setStatus(app.status);
   if (app.settingsUI?.isOpen()) app.settingsUI.render();
   if (app.debugUI?.isOpen()) app.debugUI.render();
+  renderNotes();
+  renderVocabulary();
   if (!dom.onboarding.hidden) {
     updateOnboardSelections();
     refreshChecks();
@@ -964,17 +1669,17 @@ function setLanguage(code) {
 // --------------------------------------------------------------------------
 
 function setOnboardStep(step) {
-  const safe = clamp(Number(step) || 1, 1, 3);
+  const safe = clamp(Number(step) || 1, 1, 4);
   dom.onboardPanel.dataset.step = String(safe);
   dom.onboardPanel.querySelectorAll(".onboard-step").forEach((section) => {
     section.hidden = Number(section.dataset.step) !== safe;
   });
   if (dom.onboardStepCount) {
-    dom.onboardStepCount.textContent = `0${safe} / 03`;
+    dom.onboardStepCount.textContent = `0${safe} / 04`;
   }
   dom.onboardBack.hidden = safe === 1;
-  dom.onboardNext.hidden = safe === 3;
-  dom.onboardStart.hidden = safe !== 3;
+  dom.onboardNext.hidden = safe === 4;
+  dom.onboardStart.hidden = safe !== 4;
 }
 
 function packList() {
@@ -1092,6 +1797,11 @@ function updateOnboardSelections() {
   dom.onboardTheme.querySelectorAll("[data-theme]").forEach((button) => {
     button.classList.toggle("active", button.dataset.theme === theme);
   });
+  const experience = app.settings?.experience?.mode || "conversation";
+  dom.onboardExperience?.querySelectorAll("[data-experience]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.experience === experience);
+  });
+  if (dom.onboardStudyWarning) dom.onboardStudyWarning.hidden = experience !== "study";
   updateCustomPackFields();
 }
 
@@ -1189,12 +1899,16 @@ function openLab() {
 
 function openSettings(tab) {
   if (historyOpen) closeHistory();
+  if (vocabOpen) closeVocabulary();
+  closeStudyMenu();
   app.settingsUI.open(tab);
 }
 
 function closeDrawers() {
+  closeStudyMenu();
   if (app.settingsUI?.isOpen()) app.settingsUI.close();
   if (historyOpen) closeHistory();
+  if (vocabOpen) closeVocabulary();
 }
 
 function onBackdropClick() {
@@ -1205,11 +1919,31 @@ function onBackdropClick() {
 // Keyboard / wheel / pointer
 // --------------------------------------------------------------------------
 
+function canPageReply() {
+  if (dom.reply.hidden || app.replyPages.length <= 1) return false;
+  if (app.settingsUI?.isOpen() || historyOpen || vocabOpen || app.debugUI?.isOpen() || !dom.onboarding.hidden) {
+    return false;
+  }
+  const tag = document.activeElement?.tagName;
+  return !["INPUT", "TEXTAREA", "SELECT"].includes(tag);
+}
+
 function onKeyDown(event) {
   const key = event.key;
   const mod = event.ctrlKey || event.metaKey;
 
+  if ((key === "ArrowLeft" || key === "ArrowRight") && canPageReply()) {
+    event.preventDefault();
+    setReplyPage(app.replyPage + (key === "ArrowRight" ? 1 : -1));
+    return;
+  }
+
   if (key === "Escape") {
+    if (studyMenuOpen) {
+      closeStudyMenu();
+      event.preventDefault();
+      return;
+    }
     if (app.debugUI?.isOpen()) {
       app.debugUI.close();
       event.preventDefault();
@@ -1220,7 +1954,7 @@ function onKeyDown(event) {
       event.preventDefault();
       return;
     }
-    if (app.settingsUI?.isOpen() || historyOpen) {
+    if (app.settingsUI?.isOpen() || historyOpen || vocabOpen) {
       closeDrawers();
       event.preventDefault();
       return;
@@ -1272,7 +2006,7 @@ function onInputKeyDown(event) {
 }
 
 function onWheel(event) {
-  if (event.target.closest?.(".drawer, .debug, .onboarding")) return;
+  if (event.target.closest?.(".drawer, .debug, .onboarding, .note, .study-menu")) return;
   event.preventDefault();
   const factor = event.deltaY < 0 ? 1.05 : 1 / 1.05;
   if (event.ctrlKey || event.metaKey) {
@@ -1285,7 +2019,11 @@ function onWheel(event) {
 function onStagePointerDown(event) {
   if (event.button !== 0) return;
   const target = event.target;
-  if (target.closest?.("button, input, textarea, a, .drawer, .debug, .onboarding, .backdrop, .toast, .center, .dock, canvas")) {
+  if (studyMenuOpen && !target.closest?.("#study-menu, #study-btn")) {
+    closeStudyMenu();
+    return;
+  }
+  if (target.closest?.("button, input, textarea, a, .drawer, .debug, .onboarding, .backdrop, .toast, .center, .dock, canvas, .study-menu, .note")) {
     return;
   }
   toggleMic();
@@ -1304,17 +2042,62 @@ function bindEvents() {
     const next = i18n.locale === "ru" ? "en" : "ru";
     setLanguage(next);
   });
+  dom.studyBtn?.addEventListener("pointerdown", () => {
+    app.lastSelection = selectedStudyText() || app.lastSelection;
+  });
+  dom.studyBtn?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (!studyMenuOpen) app.lastSelection = selectedStudyText() || app.lastSelection;
+    toggleStudyMenu();
+  });
+  dom.studyMenu?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-study-action]");
+    if (!button) return;
+    handleStudyAction(button.dataset.studyAction);
+  });
   dom.historyBtn.addEventListener("click", () => {
     if (historyOpen) closeHistory();
     else openHistory();
   });
   dom.settingsBtn.addEventListener("click", () => openSettings());
+  dom.vocabClose?.addEventListener("click", closeVocabulary);
+  dom.vocabForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveVocabulary();
+  });
+  dom.vocabCancel?.addEventListener("click", resetVocabForm);
+  dom.vocabSearch?.addEventListener("input", () => {
+    app.vocabFilter = dom.vocabSearch.value;
+    renderVocabulary();
+  });
+  dom.vocabExportJson?.addEventListener("click", exportVocabularyJson);
+  dom.vocabExportCsv?.addEventListener("click", exportVocabularyCsv);
   dom.historyClose.addEventListener("click", closeHistory);
   dom.historyClear.addEventListener("click", clearHistory);
   dom.historyExport.addEventListener("click", () => app.settingsUI.exportData());
   dom.backdrop.addEventListener("click", onBackdropClick);
 
   dom.reply.addEventListener("click", onReplyClick);
+  dom.replyPrev.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setReplyPage(app.replyPage - 1);
+  });
+  dom.replyNext.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setReplyPage(app.replyPage + 1);
+  });
+  dom.replyNew.addEventListener("click", (event) => {
+    event.stopPropagation();
+    jumpToNewReplyPage();
+  });
+  dom.replyCopy.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyReply(app.replyPages[app.replyPage] || "");
+  });
+  dom.replyCopyAll.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyReply(app.replyPages.join("\n\n").trim());
+  });
   dom.input.addEventListener("keydown", onInputKeyDown);
   dom.input.addEventListener("input", () => {
     app.userEditing = dom.input.value.length > 0;
@@ -1342,6 +2125,15 @@ function bindEvents() {
   document.addEventListener("pointermove", scheduleIdle, { passive: true });
   window.addEventListener("wheel", onWheel, { passive: false });
   window.addEventListener("resize", autoGrow);
+  window.addEventListener("resize", () => {
+    clearTimeout(noteResizeTimer);
+    noteResizeTimer = setTimeout(() => {
+      if (!app._noteEditing && !app._noteDragging) renderNotes();
+    }, 200);
+  });
+  window.addEventListener("resize", () => {
+    if (!app._noteEditing && !app._noteDragging) renderNotes();
+  });
 
   dom.onboardLang.addEventListener("click", (event) => {
     const button = event.target.closest("[data-lang]");
@@ -1383,6 +2175,12 @@ function bindEvents() {
       face: { palette_name: button.dataset.theme, palette: null },
     });
     renderPackChoices();
+    updateOnboardSelections();
+  });
+  dom.onboardExperience?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-experience]");
+    if (!button) return;
+    patchSettings({ experience: { mode: button.dataset.experience } });
     updateOnboardSelections();
   });
   dom.onboardNext.addEventListener("click", () => {
@@ -1453,6 +2251,9 @@ async function init() {
   app.patchSettings = patchSettings;
   app.applySettings = applySettings;
   app.applyPack = applyPack;
+  app.addNote = addNote;
+  app.openVocabulary = openVocabulary;
+  app.setStudy = setStudy;
   app.toast = toast;
   app.send = send;
   app.sendAudio = sendAudio;

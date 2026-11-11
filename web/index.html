@@ -27,6 +27,10 @@
     <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 9a4 4 0 0 1 0 6M19.5 6.5a8 8 0 0 1 0 11"/></symbol>
     <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h4M18 14h.01"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5A2.5 2.5 0 0 0 4 22V4.5Z"/><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 4 3v2H6v-2l4-3-1-6Z"/><path d="M12 15v6"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
   </svg>
 
   <div class="app" id="app">
@@ -41,8 +45,16 @@
 
       <div class="corner top-right">
         <button class="text-btn" id="lang-btn" type="button" title="Language / Язык">EN</button>
+        <button class="icon-btn study-only" id="study-btn" type="button" data-i18n-title="study.menu"><svg><use href="#i-book"/></svg></button>
         <button class="icon-btn" id="history-btn" type="button" data-i18n-title="history.title"><svg><use href="#i-history"/></svg></button>
         <button class="icon-btn" id="settings-btn" type="button" data-i18n-title="settings.title"><svg><use href="#i-gear"/></svg></button>
+      </div>
+
+      <div class="study-menu" id="study-menu" hidden>
+        <button type="button" data-study-action="note"><svg><use href="#i-plus"/></svg><span data-i18n="study.addNote">Add note</span></button>
+        <button type="button" data-study-action="word"><svg><use href="#i-plus"/></svg><span data-i18n="study.addWord">Add word</span></button>
+        <button type="button" data-study-action="vocabulary"><svg><use href="#i-list"/></svg><span data-i18n="study.vocabulary">Vocabulary</span></button>
+        <button type="button" data-study-action="settings"><svg><use href="#i-gear"/></svg><span data-i18n="study.settings">Study settings</span></button>
       </div>
 
       <section class="center" id="center">
@@ -55,10 +67,25 @@
         </div>
       </section>
 
+      <div class="notes-layer" id="notes-layer" aria-label="Sticky notes"></div>
+
       <div class="dock" id="dock">
         <div class="hint" id="hint" role="status" aria-live="polite"></div>
         <div class="text-stack" id="text-stack">
-          <div class="reply" id="reply" hidden aria-live="polite"></div>
+          <div class="reply" id="reply" hidden aria-live="polite">
+            <div class="reply-text" id="reply-text"></div>
+            <div class="reply-foot" id="reply-foot" hidden>
+              <button class="reply-nav" id="reply-prev" type="button" data-i18n-title="reply.previous">‹</button>
+              <span class="reply-page" id="reply-page">1 / 1</span>
+              <button class="reply-nav" id="reply-next" type="button" data-i18n-title="reply.next">›</button>
+              <span class="reply-dots" id="reply-dots"></span>
+              <button class="reply-new" id="reply-new" type="button" data-i18n="reply.newPage" hidden>new page</button>
+              <span class="reply-actions">
+                <button class="reply-copy" id="reply-copy" type="button" data-i18n="reply.copyPage">copy page</button>
+                <button class="reply-copy" id="reply-copy-all" type="button" data-i18n="reply.copyAll">copy all</button>
+              </span>
+            </div>
+          </div>
           <textarea id="input" rows="1" autocomplete="off" spellcheck="true" data-i18n-placeholder="stage.placeholder"></textarea>
         </div>
         <div class="dock-meta">
@@ -110,6 +137,38 @@
     <div class="empty-state" id="history-empty" data-i18n="history.empty">Nothing here yet. Say something.</div>
   </aside>
 
+  <aside class="drawer vocab-drawer" id="vocab-drawer" hidden aria-label="Vocabulary">
+    <header class="drawer-head">
+      <div>
+        <div class="drawer-title" data-i18n="vocab.title">Vocabulary</div>
+        <div class="drawer-sub" data-i18n="vocab.sub">words you want to keep</div>
+      </div>
+      <div class="head-actions">
+        <button class="icon-btn small" id="vocab-export-json" type="button" data-i18n-title="vocab.exportJson"><svg><use href="#i-download"/></svg></button>
+        <button class="icon-btn small" id="vocab-export-csv" type="button" data-i18n-title="vocab.exportCsv"><svg><use href="#i-download"/></svg></button>
+        <button class="icon-btn" id="vocab-close" type="button" data-i18n-title="reply.dismiss"><svg><use href="#i-x"/></svg></button>
+      </div>
+    </header>
+    <div class="drawer-body vocab-body">
+      <form class="vocab-form" id="vocab-form">
+        <input id="vocab-term" type="text" maxlength="80" autocomplete="off" data-i18n-placeholder="vocab.term" />
+        <input id="vocab-language" type="text" maxlength="12" autocomplete="off" data-i18n-placeholder="vocab.language" />
+        <textarea id="vocab-meaning" rows="2" maxlength="500" data-i18n-placeholder="vocab.meaning"></textarea>
+        <textarea id="vocab-example" rows="2" maxlength="500" data-i18n-placeholder="vocab.example"></textarea>
+        <div class="vocab-form-actions">
+          <button class="primary-btn" id="vocab-save" type="submit" data-i18n="vocab.add">Add word</button>
+          <button class="ghost-btn" id="vocab-cancel" type="button" data-i18n="vocab.cancel" hidden>Cancel</button>
+        </div>
+      </form>
+      <div class="vocab-tools">
+        <input id="vocab-search" type="search" autocomplete="off" data-i18n-placeholder="vocab.search" />
+        <span class="vocab-count" id="vocab-count"></span>
+      </div>
+      <div class="vocab-list" id="vocab-list"></div>
+      <div class="empty-state vocab-empty" id="vocab-empty" data-i18n="vocab.empty">No words yet.</div>
+    </div>
+  </aside>
+
   <div class="debug" id="debug-overlay" hidden>
     <div class="debug-window">
       <header class="debug-head">
@@ -132,7 +191,7 @@
   <div class="onboarding" id="onboarding" hidden>
     <div class="onboard-panel" id="onboard-panel" data-step="1">
       <div class="onboard-top">
-        <div class="onboard-step-count" id="onboard-step-count">01 / 03</div>
+        <div class="onboard-step-count" id="onboard-step-count">01 / 04</div>
       </div>
 
       <section class="onboard-step" data-step="1">
@@ -188,6 +247,25 @@
           <button type="button" class="choice theme-choice active" data-theme="mono"><i class="swatch mono"></i><span data-i18n="settings.character.mono">Mono</span></button>
           <button type="button" class="choice theme-choice" data-theme="mint"><i class="swatch mint"></i><span data-i18n="settings.character.mint">Mint</span></button>
           <button type="button" class="choice theme-choice" data-theme="paper"><i class="swatch paper"></i><span data-i18n="settings.character.paper">Paper</span></button>
+        </div>
+      </section>
+
+      <section class="onboard-step" data-step="4" hidden>
+        <h2 data-i18n="onboarding.mode">How should we talk?</h2>
+        <p data-i18n="onboarding.modeText">Conversation keeps the current short, one-line replies. Study allows longer answers split across pages.</p>
+        <div class="choice-row" id="onboard-experience">
+          <button type="button" class="choice experience-choice active" data-experience="conversation">
+            <b data-i18n="onboarding.conversation">Conversation</b>
+            <small data-i18n="onboarding.conversationHint">Short replies, one line at a time.</small>
+          </button>
+          <button type="button" class="choice experience-choice" data-experience="study">
+            <b data-i18n="onboarding.study">Study</b>
+            <small data-i18n="onboarding.studyHint">Longer answers with pages you can turn.</small>
+          </button>
+        </div>
+        <div class="notice" id="onboard-study-warning" hidden>
+          <b data-i18n="onboarding.studyWarningTitle">Before you choose Study</b>
+          <p data-i18n="onboarding.studyWarning"></p>
         </div>
       </section>
 

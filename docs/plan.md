@@ -1,7 +1,7 @@
 # Vector Development Plan
 
-**Status:** Milestone 2 complete. Milestone 3 not started.
-**Last updated:** 2026-11-10
+**Status:** Milestone 4 complete. Ready for final review and commit.
+**Last updated:** 2026-11-11
 **Purpose:** source of truth for the remaining phases, approved decisions, and handoff context between development sessions.
 
 Read this document before starting a new phase. Update the status and “current state” section after each milestone.
@@ -102,8 +102,8 @@ The default conversation model remains `qwen2.5:3b`; Study mode should default t
 | **M0** | Refine ideas, get approval, write this plan | Done |
 | **M1** | Character packs, skins, custom packs, onboarding/settings, migration | Done |
 | **M2** | Smart pixel separation, MOSS polish, Face Lab controls | Done |
-| **M3** | Study mode core: mode switch, paginated replies, prompt, warning | Not started |
-| **M4** | Study utilities: sticky notes, vocabulary, menu, export, docs | Not started |
+| **M3** | Study mode core: mode switch, paginated replies, prompt, warning | Done |
+| **M4** | Study utilities: sticky notes, vocabulary, menu, export, docs | Done |
 
 Each milestone ends with:
 - `pytest -q`
@@ -114,58 +114,90 @@ Each milestone ends with:
 
 ---
 
-## 4. Current state after M2
+## 4. Current state after M4
 
-### Implemented in M2
+### Implemented in M4
+- `vector/study.py`, `tests/test_study.py`:
+  - `StudyStore` backed by `data/study.json` with atomic writes.
+  - Notes: id, text, x/y, width, colour, per-note share toggle, created/updated timestamps.
+  - Vocabulary: id, term, meaning, example, language, source, created/updated timestamps.
+  - Limits: 100 notes, 1000 words, note text 2000 chars, shared notes 8 × 300 chars, term 80, meaning/example 500.
+  - CRUD, replace/import, clear vocabulary, bounded shared notes.
 - `vector/config.py`, `tests/test_config.py`:
-  - `face.separation` default `inset`, sanitised to `inset` / `gap` / `trim` / `off`; legacy `auto` migrates to `inset`.
-  - Default and fallback tests.
-- `web/js/character.js`:
-  - Eye/mouth cell recording and a collision-aware `separate()` pass.
-  - `inset`/`gap`/`trim`/`off`; `inset` shaves a thin band from the mouth edge or corner facing the eyes instead of deleting a whole cell.
-  - The eyes keep their full pixels in `inset` mode.
-  - `gap`/`trim` use hard `destination-out` clearing for comparison; `inset` leaves no dimmed intersection pixels.
-  - Collision overlay data and `debugCollision` markers.
-  - Draw order: eyes → mouth → other parts → separation → brows.
-  - Original `laugh` frame is untouched.
-  - MOSS polish: 3×2 phosphor eye sockets with one pupil, caret happy eyes, flatter neutral mouth, shallow smile/frown, smaller blush, quieter scanline (skipped under reduced motion).
-- `web/js/main.js`:
-  - `applySettings` passes the separation mode to the character.
-  - Onboarding pack previews now follow the selected room/palette, and re-render on theme changes.
-- `web/js/settings.js`:
-  - Character tab has a “Smart separation” selector with Inset edges / Background gap / Trim pixels / Off.
-- `web/js/lab.js`, `web/lab.html`, `web/css/lab.css`:
-  - Separation selector, collision overlay checkbox, `?separation=` and `?reduced=` URL support.
-  - Status line includes the separation mode.
-  - Neutral emotion is now actually shown (the old guard left the preview on Happy).
-  - Lab canvas scales and centres correctly at desktop and 480 px widths.
-- `web/css/app.css`:
-  - Shared canvas sizing for `#character` and `#lab-character`.
+  - `STUDY_PATH`, note colour constants, `experience.notes_font` / `notes_font_size` / `notes_ink` / `notes_color`.
+  - Sanitisation and defaults.
+- `vector/prompts.py`, `vector/dialogue.py`, `tests/test_prompts.py`:
+  - Shared notes are injected into the study prompt as “Notes on the user's screen”, capped and clearly framed.
+  - Notes are not injected in Conversation mode or in poke/proactive/wake prompts.
+- `vector/server.py`:
+  - `StudyStore` in `AppState`, `study` in `hello` and debug snapshots.
+  - `GET /api/study`, notes CRUD, vocabulary CRUD, `study_changed` broadcasts.
+  - Export/import include study data.
+  - Debug snapshot includes the resolved character and page-splitter settings.
+- Frontend:
+  - Study menu with a book icon: Add note, Add word, Vocabulary, Study settings.
+  - Draggable sticky notes with plain-text editing, colour cycling, per-note rule toggle, delete, and viewport clamping.
+  - Quick rule templates (“Answer in English”, “Use examples”, “Keep it short”) create shared notes in one click.
+  - Notes hidden in Conversation mode and restored in Study mode.
+  - Vocabulary drawer with add/edit/delete/search and JSON/CSV export; selection in a study reply prefills the term and source.
+  - Settings → Study gains note font, size, ink colour, and default note colour controls.
+  - 480 px layout and reduced-motion behaviour preserved.
 - Docs and i18n:
-  - README / README.ru updated.
-  - EN/RU strings for the separation controls.
+  - README / README.ru sections for notes, vocabulary, the Study menu, and export.
+  - EN/RU strings for all new UI.
 
-### Carried over from M1
-- `vector/characters.py`: packs, skins, custom-pack resolution, legacy mapping, API payload.
-- `vector/config.py`: settings version 3, `character.pack`, `character.custom`, `app.pack_chosen`, `face.skin`, legacy migration.
-- `vector/prompts.py`: resolved pack prompts; Nib/ZIP removed.
-- `vector/server.py`: `/api/characters` and `characters` in `hello`.
-- Frontend: onboarding pack chooser, custom pack fields, one-time pack chooser, settings selectors.
-- `tests/test_characters.py`, config and prompt tests.
+### Implemented in M3
+- `vector/config.py`, `tests/test_config.py`:
+  - `experience.mode` (`conversation` / `study`), `study_pages` (2–6), `study_max_tokens` (256–1200), `study_page_chars` (220–700).
+  - Defaults are 3 pages, 600 tokens, and 380 characters for the fallback splitter.
+  - Sanitisation and default tests.
+- `vector/prompts.py`, `tests/test_prompts.py`:
+  - Study prompt branch with the `[[page]]` protocol, 2–3 pages, 2–5 sentences per page, emotion tags, and a final check-for-understanding question.
+  - Conversation prompt is unchanged and does not mention pages.
+  - Poke/proactive/wake prompts stay short even in Study mode.
+- `vector/dialogue.py`, `tests/test_dialogue.py`:
+  - Streaming `PageSplitter` with sentinel detection across chunk boundaries, partial-sentinel suppression, sentence-aware fallback at `study_page_chars`, and page-cap overflow merged into the last page.
+  - `assistant_delta` carries a `page` index.
+  - Study replies are stored with `kind: "study"` and `meta.pages` / `meta.page_count`.
+  - `LLMRouter` receives a per-request `num_predict` override from `experience.study_max_tokens`.
+- Frontend:
+  - One paginated reply card with `‹ 1 / 3 ›`, dots, a “new page” indicator, `Left`/`Right` navigation, copy page, and copy all.
+  - New pages never auto-advance while the user is reading.
+  - History shows a `study` chip.
+  - Onboarding has a fourth step for Conversation vs Study.
+  - Settings → Companion has the experience switch; Settings → Study appears only in Study mode with page/token/fallback controls and the CPU-aware warning.
+  - The listening-mode label is now “Listening” / “Слушание”.
+- Docs and i18n:
+  - README / README.ru sections for Conversation/Study modes and the model warning.
+  - EN/RU strings for the new controls and warning.
 
-### Verification at M2
-- `pytest -q` → 60 passed, 1 skipped.
+### Carried over from M1–M2
+- Character packs, skins, custom packs, legacy migration, onboarding pack chooser.
+- Smart pixel separation (`inset` / `gap` / `trim` / `off`), collision overlay, MOSS polish, Face Lab controls.
+- Settings version 3, history, memory facts, and all existing conversation behaviour.
+
+### Verification at M4
+- `pytest -q` → 82 passed, 1 skipped.
 - `node --check` passes for all frontend modules.
 - `git diff --check` clean.
-- Headless Chrome review: all MOSS emotions, Vector collisions in `proud` / `wink` / `happy`, Lumen `surprised`, collision overlay, settings selector, onboarding previews in Mono/Mint/Paper, Face Lab at 900 px and 480 px.
-- Verified `inset` is pixel-identical to `off` when no collision exists (except intentionally random glitch particles).
-- `PATCH /api/settings` persists valid separation modes and sanitises invalid values to `inset`.
+- Headless Chrome review:
+  - Study menu opens with all four actions.
+  - Note creation, text editing, colour cycling, rule toggle, drag, and persistence through the API.
+  - Notes hide in Conversation mode and reappear with text intact in Study mode.
+  - Vocabulary add, search, edit, and selected-text prefill.
+  - Note font/size/ink changes apply immediately.
+  - 480 px notes and vocabulary layouts.
+- Shared notes appear in `/api/prompt` only in Study mode.
+- `GET /api/study` and the notes/vocabulary CRUD endpoints persist to `data/study.json`.
+- Export/import include study data.
+- M3 checks still pass: paginated replies, keyboard navigation, mode switching, and conversation-mode behaviour.
 
 ### Known limitations
-- MOSS eyes and mouth are far apart by design, so separation rarely triggers there even though the engine supports it.
-- `gap` and `trim` can look identical when no other feature sits inside the eye halo; they are kept for comparison, while `inset` is the default.
-- The inset seam is a few backing pixels; its on-screen thickness scales slightly with the face size because it stays on the sprite grid.
-- No Study mode, notes, or vocabulary yet.
+- The fallback page splitter is heuristic; it prefers sentence boundaries but may hard-cut at the page size when a model writes one very long sentence.
+- Page text is stored without the sentinel; history shows the full answer joined with blank lines.
+- Copy controls appear only when a reply has more than one page.
+- Vocabulary language/source are stored but the source is shown only in the API, not as a visible label.
+- Notes use percentage positions; they are re-clamped on render and resize but may shift slightly after a large viewport change.
 
 ---
 
@@ -565,11 +597,8 @@ Add tests for:
    - update this document’s status and current-state section
    - stop for user review and commit.
 
-### Exact next action for M3
-Start with section 6.1:
-- add the `experience` block to defaults and sanitisation
-- add config tests
-- then add the study prompt branch and the page splitter in `vector/dialogue.py`
+### Exact next action after M4
+All planned milestones are complete. Run the full checks one last time, review the working tree, and commit. Future work should start from a new plan section rather than extending M4 silently.
 
 ---
 

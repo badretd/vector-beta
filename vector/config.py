@@ -32,6 +32,7 @@ DATA_DIR = Path(os.environ.get("VECTOR_DATA_DIR", ROOT / "data")).expanduser()
 WEB_DIR = ROOT / "web"
 SETTINGS_PATH = DATA_DIR / "settings.json"
 HISTORY_PATH = DATA_DIR / "history.json"
+STUDY_PATH = DATA_DIR / "study.json"
 LOG_DIR = DATA_DIR / "logs"
 
 # The default face is a tiny white-on-black pixel sprite. The palette is kept
@@ -54,6 +55,7 @@ LANGUAGES = ("auto", "en", "ru", "de", "es", "fr", "uk", "pl", "it", "pt", "zh",
 THEMES = ("mono", "mint", "paper")
 FACE_STYLES = ("original", "pixel")
 PALETTES = ("mono", "mint", "paper")
+NOTE_COLORS = ("amber", "mint", "rose", "paper")
 
 DEFAULTS: dict[str, Any] = {
     "version": 3,
@@ -142,6 +144,16 @@ DEFAULTS: dict[str, Any] = {
         "particles": False,
         "glow": False,
         "antenna": False,
+    },
+    "experience": {
+        "mode": "conversation",
+        "study_pages": 3,
+        "study_max_tokens": 600,
+        "study_page_chars": 380,
+        "notes_font": "sans",
+        "notes_font_size": 15,
+        "notes_ink": "#2b2118",
+        "notes_color": "amber",
     },
     "engagement": {
         "proactive": True,
@@ -292,6 +304,33 @@ def sanitize(settings: dict[str, Any]) -> dict[str, Any]:
             s["face"]["separation"] = "inset"
         if s["face"].get("separation") not in ("inset", "gap", "trim", "off"):
             s["face"]["separation"] = "inset"
+
+        experience = s.setdefault("experience", {})
+        if not isinstance(experience, dict):
+            experience = {}
+        if experience.get("mode") not in ("conversation", "study"):
+            experience["mode"] = "conversation"
+        experience["study_pages"] = int(_clamp(int(experience.get("study_pages", 3)), 2, 6))
+        experience["study_max_tokens"] = int(
+            _clamp(int(experience.get("study_max_tokens", 600)), 256, 1200)
+        )
+        experience["study_page_chars"] = int(
+            _clamp(int(experience.get("study_page_chars", 380)), 220, 700)
+        )
+        notes_font = str(experience.get("notes_font") or "sans").strip().lower()
+        if notes_font not in ("sans", "serif", "mono"):
+            notes_font = "sans"
+        experience["notes_font"] = notes_font
+        experience["notes_font_size"] = int(
+            _clamp(int(experience.get("notes_font_size", 15)), 12, 22)
+        )
+        experience["notes_ink"] = _color(experience.get("notes_ink"), "#2b2118")
+        notes_color = str(experience.get("notes_color") or "amber").strip().lower()
+        if notes_color not in NOTE_COLORS:
+            notes_color = "amber"
+        experience["notes_color"] = notes_color
+        s["experience"] = experience
+
         s["engagement"]["idle_min_seconds"] = int(_clamp(int(s["engagement"]["idle_min_seconds"]), 20, 3600))
         s["engagement"]["sleep_after_minutes"] = int(_clamp(int(s["engagement"]["sleep_after_minutes"]), 1, 120))
         for key in ("affection", "curiosity", "energy"):

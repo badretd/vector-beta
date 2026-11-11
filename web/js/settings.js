@@ -104,6 +104,9 @@ export class SettingsUI {
 
   render() {
     if (!this.settings || !this.settings.app) return;
+    if (this.tab === "study" && (this.get("experience.mode") || "conversation") !== "study") {
+      this.tab = "companion";
+    }
     this.renderTabs();
     this.renderBody();
   }
@@ -113,8 +116,11 @@ export class SettingsUI {
       ["voice", "settings.tabs.voice"],
       ["character", "settings.tabs.character"],
       ["companion", "settings.tabs.companion"],
-      ["advanced", "settings.tabs.advanced"],
     ];
+    if ((this.get("experience.mode") || "conversation") === "study") {
+      tabs.push(["study", "settings.tabs.study"]);
+    }
+    tabs.push(["advanced", "settings.tabs.advanced"]);
     this.el.tabs.textContent = "";
     for (const [id, key] of tabs) {
       const button = el("button", "tab", this.app.i18n.t(key));
@@ -131,6 +137,7 @@ export class SettingsUI {
     if (this.tab === "voice") this.renderVoice();
     else if (this.tab === "character") this.renderCharacter();
     else if (this.tab === "companion") this.renderCompanion();
+    else if (this.tab === "study") this.renderStudy();
     else this.renderAdvanced();
   }
 
@@ -235,6 +242,14 @@ export class SettingsUI {
     return row;
   }
 
+  colorInput(path, fallback = "#2b2118") {
+    const input = el("input");
+    input.type = "color";
+    input.value = String(this.get(path) || fallback);
+    input.addEventListener("input", () => this.patch(path, input.value));
+    return input;
+  }
+
   colorField(labelKey, key) {
     const wrap = el("label", "color-field");
     wrap.appendChild(el("span", "", this.app.i18n.t(labelKey)));
@@ -248,6 +263,13 @@ export class SettingsUI {
     });
     wrap.appendChild(input);
     return wrap;
+  }
+
+  studyWarning() {
+    const box = el("div", "notice study-warning");
+    box.appendChild(el("b", "", this.app.i18n.t("settings.study.warningTitle")));
+    box.appendChild(el("p", "", this.app.i18n.t("settings.study.warning")));
+    return box;
   }
 
   // -- tabs -------------------------------------------------------------
@@ -433,6 +455,19 @@ export class SettingsUI {
     const activePack = (this.app.characters?.packs || []).find(
       (pack) => pack.id === (this.get("character.pack") || "vector"),
     );
+    const experienceSelect = this.select("experience.mode", [
+      ["conversation", "settings.companion.conversation"],
+      ["study", "settings.companion.study"],
+    ]);
+    experienceSelect.addEventListener("change", () => this.render());
+    this.el.body.appendChild(this.field(
+      "settings.companion.experience",
+      experienceSelect,
+      "settings.companion.experienceHint",
+    ));
+    if ((this.get("experience.mode") || "conversation") === "study") {
+      this.el.body.appendChild(this.studyWarning());
+    }
     this.el.body.appendChild(this.field(
       "settings.companion.name",
       this.text("persona.name", activePack?.name || "Vector"),
@@ -532,6 +567,85 @@ export class SettingsUI {
     const current = $("settings-facts");
     if (!current) return;
     current.replaceWith(this.renderFacts());
+  }
+
+  renderStudy() {
+    this.el.body.appendChild(this.field(
+      "settings.study.pages",
+      this.range("experience.study_pages", 2, 6, 1, (v) => String(v)),
+      "settings.study.pagesHint",
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.maxTokens",
+      this.range("experience.study_max_tokens", 256, 1200, 32, (v) => String(v)),
+      "settings.study.maxTokensHint",
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.pageChars",
+      this.range("experience.study_page_chars", 220, 700, 10, (v) => String(v)),
+      "settings.study.pageCharsHint",
+    ));
+
+    this.el.body.appendChild(this.field(
+      "settings.study.notesFont",
+      this.select("experience.notes_font", [
+        ["sans", "settings.study.fontSans"],
+        ["serif", "settings.study.fontSerif"],
+        ["mono", "settings.study.fontMono"],
+      ]),
+      "settings.study.notesFontHint",
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.notesSize",
+      this.range("experience.notes_font_size", 12, 22, 1, (v) => `${v}px`),
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.notesInk",
+      this.colorInput("experience.notes_ink"),
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.notesColor",
+      this.select("experience.notes_color", [
+        ["amber", "settings.study.colorAmber"],
+        ["mint", "settings.study.colorMint"],
+        ["rose", "settings.study.colorRose"],
+        ["paper", "settings.study.colorPaper"],
+      ]),
+      "settings.study.notesColorHint",
+    ));
+
+    const rules = el("div", "field");
+    rules.appendChild(el("div", "section-title", this.app.i18n.t("settings.study.quickRules")));
+    const ruleRow = el("div", "choice-row");
+    for (const key of ["ruleEnglish", "ruleExamples", "ruleShort"]) {
+      const text = this.app.i18n.t(`settings.study.${key}`);
+      const button = el("button", "choice", text);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        this.close();
+        this.app.addNote({ text, share: true });
+      });
+      ruleRow.appendChild(button);
+    }
+    rules.appendChild(ruleRow);
+    this.el.body.appendChild(rules);
+
+    const actions = el("div", "field-row vocab-actions");
+    const addNote = el("button", "ghost-btn", this.app.i18n.t("settings.study.addNote"));
+    addNote.type = "button";
+    addNote.addEventListener("click", () => {
+      this.close();
+      this.app.addNote();
+    });
+    const vocabulary = el("button", "ghost-btn", this.app.i18n.t("settings.study.vocabulary"));
+    vocabulary.type = "button";
+    vocabulary.addEventListener("click", () => {
+      this.close();
+      this.app.openVocabulary();
+    });
+    actions.append(addNote, vocabulary);
+    this.el.body.appendChild(actions);
+    this.el.body.appendChild(this.studyWarning());
   }
 
   renderAdvanced() {

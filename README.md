@@ -12,7 +12,7 @@ The interface is deliberately one screen: a centered face, one line of text at t
 
 ## Design rules
 
-- **One stage, one face, one line.** No persistent chat panel, HUD, meters, status pills, or toolbars.
+- **One stage, one face, one line.** Conversation mode stays on one line; Study mode uses one paginated reply card. No persistent chat panel, HUD, meters, status pills, or toolbars.
 - **The character is the interface.** State is expressed by the face: listening, thinking, typing, sleeping, emoting.
 - **Character packs, not a costume menu.** A pack owns the name, face, palette, and persona prompt. Vector keeps the original 12×12 silhouette; MOSS and Lumen are distinct characters, not filters.
 - **Calm by default.** Flat black, white face, amber accent, thin borders. Particles, hearts, sparkles, and glow are off unless enabled.
@@ -207,6 +207,7 @@ On the first launch Vector shows a short setup screen:
    - **Speech recognition** — Whisper is loading;
    - **Microphone** — the browser can see an input device.
 3. **Who should I be?** — pick **Vector**, **MOSS**, or **Lumen**, or create a **custom pack** with your own name, skin, and system prompt. Then pick a room theme: **Mono**, **Mint**, or **Paper**.
+4. **How should we talk?** — choose **Conversation** for the original short replies or **Study** for longer, paginated answers. Study shows the model warning described above.
 
 The speech model downloads on first use into `data/models/whisper/`. The default `small` model is about **466 MB**, so the first check may take a few minutes and needs an internet connection. Progress is shown on the readiness screen and in the debug console.
 
@@ -255,19 +256,46 @@ If startup fails after an update, reinstall the dependencies:
 | Toggle debug console | `Ctrl+Shift+D` |
 | Close an overlay / cancel a reply | `Esc` |
 | Dismiss a reply | Click the reply |
+| Turn a study page | `Left` / `Right` |
 | Poke Vector | Click the face |
 | Resize the character | Scroll |
 | Resize the whole UI | `Ctrl+scroll` |
 
 The mode selector disappears at rest. Hover the input area to see `silence · hotkey · auto`, or change it in **Settings → Companion**.
 
-## Turn-taking modes
+## Listening modes
 
 - **Silence** (default) — Silero VAD detects speech and end-of-speech. After `asr.silence_ms` of silence (default 900 ms), the utterance is transcribed and sent.
 - **Hotkey** — speech is transcribed and buffered. Nothing is sent until you press `F2` (or Enter with an empty input).
 - **Auto** — each utterance is scored by an explainable judge (questions, direct address, greetings, requests, a pending question from Vector, custom keywords). If the score reaches the threshold (default 3), the buffer is sent. Otherwise it is held, and a force-send timer eventually sends it.
 
 Every score and reason is visible in the debug console.
+
+## Conversation and Study modes
+
+Vector has two experience modes. **Conversation** is the default and keeps the original short, one-line replies. **Study** lets the model answer in depth and splits the answer across a single paginated reply card: `‹ 1 / 3 ›`, dots, and `Left`/`Right` to turn pages. New pages never yank you away from what you are reading; a small “new page” indicator appears instead.
+
+Study answers are stored in the shared history with a `study` chip. You can copy the current page or the whole answer from the reply card.
+
+### Model requirements for Study mode
+
+Study mode uses longer, multi-page answers. A **3B–4B instruction-tuned model with at least 4k context** is the practical minimum on a 16 GB CPU-only machine — for example `qwen2.5:3b`, `llama3.2:3b`, or a 4B model you already use. Larger models produce better structure, but they are not required. On CPU, expect slower responses; keep pages at 2–3 and max tokens around 600. If the model forgets page breaks, the app splits paragraphs automatically.
+
+The defaults are tuned for that machine: **3 pages**, **600 max tokens**, and a **380-character fallback page size**. You can change them in **Settings → Study**. The warning is informational; it never blocks you from choosing Study.
+
+### Study notes and vocabulary
+
+Study mode adds a small book-icon menu in the top-right. It opens four actions: **Add note**, **Add word**, **Vocabulary**, and **Study settings**. The menu and the notes are hidden in Conversation mode.
+
+Sticky notes are draggable paper cards over the stage. Type directly into a note, drag it by its dotted header, and use the header buttons to:
+
+- pin it as a **rule** for the companion,
+- cycle its colour,
+- delete it.
+
+Shared notes are sent to the model as “notes on the screen” with strict caps (8 notes × 300 characters). Visual notes stay local to the screen. The note font, text size, text colour, and default note colour are in **Settings → Study**, along with one-click rule templates for “Answer in English”, “Use examples”, and “Keep it short”.
+
+The vocabulary drawer stores words and phrases with an optional meaning, example, and language. Select text in a study reply, open the book menu, and choose **Add word** to prefill the term. The list supports search, edit, delete, and JSON/CSV export. Notes and words live in `data/study.json` and are included in the normal export/import.
 
 ## The emotion protocol
 
@@ -319,7 +347,8 @@ Everything lives in `data/settings.json` and saves automatically.
 
 - **Voice** — interface language, Whisper model, recognition language, microphone, silence before send, mic sensitivity, live partials.
 - **Character** — character pack, custom pack fields, room theme, face palette, size, smart separation, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
-- **Companion** — name override, reply language, reply length, turn-taking mode, idle nudges, mood, memory facts.
+- **Companion** — experience mode (Conversation / Study), name override, reply language, reply length, listening mode, idle nudges, mood, memory facts.
+- **Study** — pages per answer, study reply tokens, fallback page size, note font/size/colour, vocabulary access, and the model warning. This tab appears only in Study mode.
 - **Advanced** — Ollama URL and model, temperature, context, max tokens, ASR device/precision, log level, offline demo, import/export/reset.
 
 Themes are **Mono** (default), **Mint**, and **Paper**. The face palette is independent, so you can put a white face in a mint room or a dark face in a paper room.
@@ -333,6 +362,7 @@ vector-beta/
 │   ├── server.py           FastAPI, WebSocket hub, REST API, logging
 │   ├── config.py           defaults, validation, atomic settings store
 │   ├── characters.py       built-in packs, skins, legacy migration
+│   ├── study.py            sticky notes, vocabulary, atomic study store
 │   ├── asr.py              faster-whisper, Silero VAD, endpointing, partials
 │   ├── dialogue.py         turn manager, auto-send judge, memory, mood
 │   ├── llm.py              async Ollama streaming client + offline demo
@@ -388,7 +418,7 @@ The console can copy the current tab and download a JSON debug snapshot. Logs al
 
 - Microphone audio is sent only to the local server over `127.0.0.1`.
 - Whisper, Silero VAD, and Ollama run locally.
-- Settings, history, facts, and logs live in `data/`.
+- Settings, history, facts, study notes, vocabulary, and logs live in `data/`.
 - The first model download contacts Hugging Face; after that, inference is offline.
 - The server binds to `127.0.0.1` by default. Do not expose it to a network without adding authentication.
 - There is no TTS code path. The only sounds are tiny optional synthesized UI blips.

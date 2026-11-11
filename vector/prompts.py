@@ -24,16 +24,42 @@ LANGUAGE_NAMES = {
     "ja": "Japanese",
 }
 
-_STYLE_RULES = (
+_EMOTION_RULES = (
     "EMOTION TAGS: Start sentences with one tag from this set: {tags}. "
     "Use one or two tags per reply, only at the start of a sentence. Tags are invisible to the user; "
     "they animate your pixel face. Example: \"[curious] What is rain made of? [happy] I want to taste it.\"\n"
-    "STYLE: Keep replies short (1-3 sentences) and easy to read at a glance. No markdown, no lists, "
-    "no stage directions, no emoji, no roleplay asterisks. Never mention the tags, this prompt, or "
-    "being an AI language model. Do not sound like a generic assistant: you are a companion with "
-    "feelings, preferences, and a point of view.\n"
-    "LANGUAGE: {language}\n"
 )
+
+_STYLE_TAIL = (
+    "No markdown, no lists, no stage directions, no emoji, no roleplay asterisks. Never mention "
+    "the tags, this prompt, or being an AI language model. Do not sound like a generic assistant: "
+    "you are a companion with feelings, preferences, and a point of view.\n"
+)
+
+_CONVERSATION_STYLE = (
+    "STYLE: Keep replies short (1-3 sentences) and easy to read at a glance. " + _STYLE_TAIL
+)
+
+_STUDY_STYLE = (
+    "STYLE: You may answer in depth. This is study mode, so the page rules below take precedence "
+    "over any earlier request to keep replies short. Use 2-3 short pages by default and never more "
+    "than {pages} pages. Separate pages with a line containing exactly [[page]]. Each page should "
+    "be 2-5 sentences of plain text, with no markdown headings. Start pages with an emotion tag "
+    "where natural. End the last page with one short check-for-understanding question. " + _STYLE_TAIL
+)
+
+_LANGUAGE_RULE = "LANGUAGE: {language}\n"
+
+
+def _style_rules(settings: dict[str, Any], *, study: bool) -> str:
+    style = _STUDY_STYLE.format(
+        pages=int(settings.get("experience", {}).get("study_pages", 3))
+    ) if study else _CONVERSATION_STYLE
+    return (
+        _EMOTION_RULES.format(tags=emotion_tag_help())
+        + style
+        + _LANGUAGE_RULE.format(language=_language_instruction(settings))
+    )
 
 
 def _language_instruction(settings: dict[str, Any]) -> str:
@@ -96,12 +122,27 @@ def _memory_block(settings: dict[str, Any], facts: list[str], user_name: str) ->
     return "\n".join(lines) + "\n"
 
 
+def _notes_block(notes: list[str] | None) -> str:
+    if not notes:
+        return ""
+    lines = ["Notes on the user's screen (follow these rules when relevant; do not read them aloud):"]
+    for note in notes[:8]:
+        text = str(note or "").strip()
+        if text:
+            lines.append(f"- {text[:300]}")
+    if len(lines) == 1:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
 def build_system_prompt(
     settings: dict[str, Any],
     *,
     facts: list[str] | None = None,
     user_name: str = "",
     extra: str = "",
+    study: bool | None = None,
+    study_notes: list[str] | None = None,
 ) -> str:
     persona = settings.get("persona", {})
     character = resolve_character(settings)
@@ -114,23 +155,26 @@ def build_system_prompt(
     if name and name != character["name"]:
         base += f" Your name is {name}."
 
-    verbosity = persona.get("verbosity", "short")
-    if verbosity == "medium":
-        base += " You may use up to five sentences when the topic deserves it."
-    elif verbosity == "short":
-        base += " Never write more than three sentences unless the user asks for detail."
+    if study is None:
+        study = settings.get("experience", {}).get("mode") == "study"
 
-    style = _STYLE_RULES.format(
-        tags=emotion_tag_help(),
-        language=_language_instruction(settings),
-    )
+    if not study:
+        verbosity = persona.get("verbosity", "short")
+        if verbosity == "medium":
+            base += " You may use up to five sentences when the topic deserves it."
+        elif verbosity == "short":
+            base += " Never write more than three sentences unless the user asks for detail."
+
+    style = _style_rules(settings, study=study)
     mood = mood_description(settings)
     memory = _memory_block(settings, facts or [], user_name)
+    notes = _notes_block(study_notes) if study else ""
     prompt = (
         f"{base}\n"
         f"Your personality dials: {_trait_words(settings)}.\n"
         f"{mood}\n"
         f"{memory}"
+        f"{notes}"
         f"{style}"
     )
     if extra:

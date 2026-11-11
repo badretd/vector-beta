@@ -24,6 +24,7 @@ from .prompts import (
     proactive_instruction,
     wake_instruction,
 )
+from .study import StudyStore
 
 Broadcast = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -34,6 +35,146 @@ def now() -> float:
 
 def make_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+# --------------------------------------------------------------------------
+# Study pages
+# --------------------------------------------------------------------------
+
+PAGE_SENTINEL = "[[page]]"
+
+
+class PageSplitter:
+    """Split a streaming answer into pages without leaking the sentinel.
+
+    The model is asked to write ``[[page]]`` between pages. Small models
+    sometimes forget, so when a page grows past ``page_chars`` we also split
+    at a sentence boundary. The page count is capped; overflow stays on the
+    last page so no text is lost.
+    """
+
+    def __init__(self, *, enabled: bool = True, max_pages: int = 3, page_chars: int = 380) -> None:
+        self.enabled = bool(enabled)
+        self.max_pages = max(1, int(max_pages))
+        self.page_chars = max(80, int(page_chars))
+        self.page = 0
+        self.pages: list[str] = [""]
+        self._pending = ""
+        self._seen_sentinel = False
+
+    def feed(self, chunk: str) -> list[tuple[int, str]]:
+        if not chunk:
+            return []
+        if not self.enabled:
+            self.pages[0] += chunk
+            return [(0, chunk)]
+        self._pending += chunk
+        return self._drain(final=False)
+
+    def finish(self) -> list[str]:
+        if not self.enabled:
+            return [self.pages[0]]
+        self._drain(final=True)
+        pages = list(self.pages)
+        while len(pages) > 1 and not pages[-1].strip():
+            pages.pop()
+        return pages or [""]
+
+    # -- internals ------------------------------------------------------
+
+    def _drain(self, *, final: bool) -> list[tuple[int, str]]:
+        out: list[tuple[int, str]] = []
+        while True:
+            index = self._pending.find(PAGE_SENTINEL)
+            if index != -1:
+                before = self._pending[:index]
+                if before:
+                    out.extend(self._append(before, fallback=not self._seen_sentinel))
+                self._pending = self._pending[index + len(PAGE_SENTINEL) :]
+                self._seen_sentinel = True
+                self._advance()
+                continue
+
+            if final:
+                text = self._pending
+                hold = self._partial_sentinel_len(text)
+                if hold >= 2:
+                    # An unfinished sentinel is protocol noise, not prose.
+                    text = text[:-hold]
+                self._pending = ""
+                if text:
+                    out.extend(self._append(text, fallback=not self._seen_sentinel))
+                break
+
+            hold = self._partial_sentinel_len(self._pending)
+            ready = self._pending[:-hold] if hold else self._pending
+            self._pending = self._pending[-hold:] if hold else ""
+            if ready:
+                out.extend(self._append(ready, fallback=not self._seen_sentinel))
+            break
+        return out
+
+    def _partial_sentinel_len(self, text: str) -> int:
+        limit = min(len(text), len(PAGE_SENTINEL) - 1)
+        for size in range(limit, 0, -1):
+            if text.endswith(PAGE_SENTINEL[:size]):
+                return size
+        return 0
+
+    def _advance(self) -> None:
+        if self.page < self.max_pages - 1:
+            self.page += 1
+            self.pages.append("")
+
+    def _append(self, text: str, *, fallback: bool) -> list[tuple[int, str]]:
+        if not text:
+            return []
+        out: list[tuple[int, str]] = []
+        remaining = text
+        while remaining:
+            # Once we are on the final allowed page, merge everything into it.
+            if self.page >= self.max_pages - 1:
+                self.pages[self.page] += remaining
+                out.append((self.page, remaining))
+                break
+
+            if not fallback:
+                self.pages[self.page] += remaining
+                out.append((self.page, remaining))
+                break
+
+            room = self.page_chars - len(self.pages[self.page])
+            if len(remaining) <= room:
+                self.pages[self.page] += remaining
+                out.append((self.page, remaining))
+                break
+            if room <= 0:
+                self._advance()
+                continue
+
+            cut = self._find_cut(remaining, room)
+            piece = remaining[:cut]
+            self.pages[self.page] += piece
+            out.append((self.page, piece))
+            remaining = remaining[cut:]
+            self._advance()
+        return out
+
+    def _find_cut(self, text: str, room: int) -> int:
+        window = text[:room]
+        # Prefer the last sentence boundary, but do not create a tiny page.
+        floor = max(24, room // 2)
+        best = 0
+        for match in re.finditer(r"[.!?…](?:[\"')\]]*)\s+|\n+", window):
+            if match.end() >= floor:
+                best = match.end()
+        if best:
+            return best
+        # Fall back to the last whitespace, then to a hard cut.
+        space = window.rfind(" ")
+        if space >= floor:
+            return space + 1
+        return max(1, room)
 
 
 # --------------------------------------------------------------------------
@@ -364,11 +505,13 @@ class TurnManager:
         broadcast: Broadcast,
         log: Callable[..., None] | None = None,
         has_clients: Callable[[], bool] | None = None,
+        study: StudyStore | None = None,
     ) -> None:
         self.settings_store = settings
         self.llm = llm
         self.conversation = conversation
         self.broadcast = broadcast
+        self.study_store = study
         self.log = log or (lambda *a, **k: None)
         self.has_clients = has_clients
         self.judge = AutoSendJudge()
@@ -593,6 +736,9 @@ class TurnManager:
         else:
             instruction = instruction or ""
 
+        study = kind == "chat" and self.settings.get("experience", {}).get("mode") == "study"
+        generation_kind = "study" if study else kind
+
         old_id = self.current_id
         if old_id:
             await self.broadcast({"type": "assistant_cancelled", "id": old_id})
@@ -602,10 +748,16 @@ class TurnManager:
         self.current_id = make_id()
         self.current_text = ""
         self.current_emotions = []
-        self.current_kind = kind
-        self._set_status("generating", kind)
+        self.current_kind = generation_kind
+        self._set_status("generating", generation_kind)
         self._generation_task = asyncio.create_task(
-            self._generate(self.current_id, text if kind == "chat" else "", kind, instruction, cancel)
+            self._generate(
+                self.current_id,
+                text if kind == "chat" else "",
+                generation_kind,
+                instruction,
+                cancel,
+            )
         )
 
     def _update_mood_from_user(self, sentiment: float) -> None:
@@ -645,12 +797,27 @@ class TurnManager:
             self._save()
             asyncio.create_task(self._emit_memory())
 
-    def _messages_for_prompt(self, instruction: str = "") -> list[dict[str, str]]:
+    def _messages_for_prompt(self, instruction: str = "", *, kind: str = "chat") -> list[dict[str, str]]:
         s = self.settings
         turns = int(s.get("llm", {}).get("history_turns", 10))
         facts = list(self.conversation.facts)
         user_name = self.conversation.user_name or s.get("persona", {}).get("user_name", "")
-        system = build_system_prompt(s, facts=facts, user_name=user_name)
+        # Pokes, nudges, and wake lines stay short even in Study mode.
+        study = None if kind in ("chat", "study") else False
+        study_notes: list[str] = []
+        if (
+            self.study_store is not None
+            and kind in ("chat", "study")
+            and s.get("experience", {}).get("mode") == "study"
+        ):
+            study_notes = self.study_store.shared_notes()
+        system = build_system_prompt(
+            s,
+            facts=facts,
+            user_name=user_name,
+            study=study,
+            study_notes=study_notes,
+        )
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
         history = self.conversation.recent(turns * 2 + 2)
         for m in history:
@@ -679,13 +846,20 @@ class TurnManager:
         cancel: asyncio.Event,
     ) -> None:
         parser = EmotionStreamParser()
+        is_study = kind == "study"
+        experience = self.settings.get("experience", {})
+        splitter = PageSplitter(
+            enabled=is_study,
+            max_pages=int(experience.get("study_pages", 3)),
+            page_chars=int(experience.get("study_page_chars", 380)),
+        )
         full_text = ""
         emotions: list[str] = []
         current_emotion = "neutral"
         started = now()
         failed = False
         try:
-            messages = self._messages_for_prompt(instruction)
+            messages = self._messages_for_prompt(instruction, kind=kind)
             await self.broadcast(
                 {
                     "type": "assistant_start",
@@ -695,7 +869,10 @@ class TurnManager:
                 }
             )
             options = {"_kind": kind}
+            if is_study:
+                options["num_predict"] = int(experience.get("study_max_tokens", 600))
             delta_buffer = ""
+            delta_page = 0
             last_flush = time.monotonic()
             speaking = False
 
@@ -712,10 +889,23 @@ class TurnManager:
                         "id": gen_id,
                         "text": delta_buffer,
                         "emotion": current_emotion,
+                        "page": delta_page,
                     }
                 )
                 delta_buffer = ""
                 last_flush = time.monotonic()
+
+            async def feed_text(text: str) -> None:
+                nonlocal delta_buffer, delta_page
+                for page, piece in splitter.feed(text):
+                    if not piece:
+                        continue
+                    if page != delta_page and delta_buffer:
+                        await flush_delta()
+                    delta_page = page
+                    delta_buffer += piece
+                    if len(delta_buffer) >= 56 or time.monotonic() - last_flush >= 0.04:
+                        await flush_delta()
 
             async for chunk in self.llm.chat_stream(messages, cancel=cancel, options=options):
                 if cancel.is_set():
@@ -740,21 +930,24 @@ class TurnManager:
                         )
                     else:
                         text = value or ""
-                        if not text:
-                            continue
-                        full_text += text
-                        delta_buffer += text
-                        if len(delta_buffer) >= 56 or time.monotonic() - last_flush >= 0.04:
-                            await flush_delta()
+                        if text:
+                            await feed_text(text)
             for ev_kind, value in parser.flush():
                 if ev_kind == "text" and value:
-                    full_text += value
-                    delta_buffer += value
+                    await feed_text(value)
             await flush_delta()
             if cancel.is_set():
                 return
-            full_text = re.sub(r"[ \t]+", " ", full_text).strip()
-            full_text = re.sub(r"\n{3,}", "\n\n", full_text)
+            pages = splitter.finish()
+            pages = [re.sub(r"[ \t]+", " ", page).strip() for page in pages]
+            while len(pages) > 1 and not pages[-1]:
+                pages.pop()
+            full_text = (
+                "\n\n".join(page for page in pages if page)
+                if is_study
+                else (pages[0] if pages else "")
+            )
+            full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
             if not full_text:
                 lang = "ru" if self.settings.get("app", {}).get("language") == "ru" else "en"
                 full_text = (
@@ -774,6 +967,8 @@ class TurnManager:
                             "source": "fallback",
                         }
                     )
+            if is_study and (not pages or not any(page.strip() for page in pages)):
+                pages = [full_text]
             if not emotions:
                 inferred = infer_emotion(full_text)
                 emotions = [inferred]
@@ -786,12 +981,16 @@ class TurnManager:
                         "source": "inferred",
                     }
                 )
+            meta: dict[str, Any] = {"duration_ms": round((now() - started) * 1000)}
+            if is_study:
+                meta["pages"] = pages
+                meta["page_count"] = len(pages)
             message = self.conversation.add(
                 "assistant",
                 full_text,
                 emotions=emotions,
                 kind=kind,
-                meta={"duration_ms": round((now() - started) * 1000)},
+                meta=meta,
             )
             self.last_assistant_text = full_text
             self.last_activity = now()

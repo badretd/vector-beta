@@ -164,6 +164,13 @@ export class DebugUI {
       micActive: this.app.micActive,
       generating: this.app.generating,
       mode: this.app.mode,
+      experience: this.app.settings?.experience,
+      resolvedCharacter: this.snapshot?.resolved_character,
+      pageSplitter: this.snapshot?.page_splitter,
+      study: {
+        notes: this.app.study?.notes?.length || 0,
+        vocabulary: this.app.study?.vocabulary?.length || 0,
+      },
       connected: this.app.connected,
       health: this.app.health,
       asr: this.app.asr,

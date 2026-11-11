@@ -29,9 +29,10 @@ from .config import (
     settings_for_client,
 )
 from .dialogue import ConversationStore, TurnManager
-from .characters import character_payload
+from .characters import character_payload, resolve_character
 from .emotions import EMOTIONS, emotion_payload
 from .llm import LLMRouter
+from .study import StudyStore
 
 LOG = logging.getLogger("vector")
 
@@ -176,6 +177,7 @@ class AppState:
         self.settings = SettingsStore()
         configure_logging(self.settings.get("debug.log_level", "INFO"))
         self.conversation = ConversationStore()
+        self.study = StudyStore()
         self.hub = WebSocketHub()
         self.llm = LLMRouter(self.settings.all())
         self.asr_status: dict[str, Any] = {
@@ -194,6 +196,7 @@ class AppState:
             broadcast=self.hub.broadcast,
             log=lambda level, msg, *a: LOG.log(getattr(logging, level.upper(), logging.INFO), msg, *a),
             has_clients=lambda: bool(self.hub.clients),
+            study=self.study,
         )
         self.started_at = time.time()
         self.last_transcript: dict[str, Any] = {}
@@ -292,6 +295,7 @@ class AppState:
             "asr": self.asr.status(),
             "emotions": emotion_payload(),
             "characters": character_payload(),
+            "study": self.study.snapshot(),
             "input_modes": ["silence", "hotkey", "auto"],
             "server": {
                 "started_at": self.started_at,
@@ -308,11 +312,27 @@ class AppState:
             prompt = self.turn._messages_for_prompt()[0]["content"]
         except Exception:  # noqa: BLE001
             pass
+        settings = self.settings.all()
+        character = resolve_character(settings)
+        experience = settings.get("experience", {})
         return {
             "version": __version__,
-            "settings": settings_for_client(self.settings.all()),
+            "settings": settings_for_client(settings),
             "defaults": settings_for_client(DEFAULTS),
+            "resolved_character": {
+                "pack": character["id"],
+                "name": character["name"],
+                "skin": character["skin"],
+                "custom": character["custom"],
+            },
+            "page_splitter": {
+                "mode": experience.get("mode", "conversation"),
+                "max_pages": experience.get("study_pages", 3),
+                "max_tokens": experience.get("study_max_tokens", 600),
+                "page_chars": experience.get("study_page_chars", 380),
+            },
             "history": self.conversation.snapshot(),
+            "study": self.study.snapshot(),
             "logs": list(LOG_HANDLER.records)[-500:],
             "health": self.health_cache,
             "asr": self.asr.status(),
@@ -455,6 +475,90 @@ async def clear_history() -> dict[str, Any]:
     return {"ok": True}
 
 
+async def _study_changed(state: AppState) -> None:
+    await state.hub.broadcast({"type": "study_changed", "study": state.study.snapshot()})
+
+
+@app.get("/api/study")
+async def get_study() -> dict[str, Any]:
+    return get_state().study.snapshot()
+
+
+@app.post("/api/notes")
+async def add_note(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    state = get_state()
+    if not isinstance(data, dict):
+        raise HTTPException(400, "note must be an object")
+    note = state.study.add_note(data)
+    await _study_changed(state)
+    return note
+
+
+@app.patch("/api/notes/{note_id}")
+async def update_note(note_id: str, data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    state = get_state()
+    if not isinstance(data, dict):
+        raise HTTPException(400, "note patch must be an object")
+    note = state.study.update_note(note_id, data)
+    if note is None:
+        raise HTTPException(404, "note not found")
+    await _study_changed(state)
+    return note
+
+
+@app.delete("/api/notes/{note_id}")
+async def delete_note(note_id: str) -> dict[str, Any]:
+    state = get_state()
+    if not state.study.delete_note(note_id):
+        raise HTTPException(404, "note not found")
+    await _study_changed(state)
+    return {"ok": True}
+
+
+@app.post("/api/vocabulary")
+async def add_word(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    state = get_state()
+    if not isinstance(data, dict):
+        raise HTTPException(400, "word must be an object")
+    word = state.study.add_word(data)
+    if word is None:
+        raise HTTPException(400, "term is required")
+    await _study_changed(state)
+    return word
+
+
+@app.patch("/api/vocabulary/{word_id}")
+async def update_word(word_id: str, data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    state = get_state()
+    if not isinstance(data, dict):
+        raise HTTPException(400, "word patch must be an object")
+    try:
+        word = state.study.update_word(word_id, data)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if word is None:
+        raise HTTPException(404, "word not found")
+    await _study_changed(state)
+    return word
+
+
+@app.delete("/api/vocabulary/{word_id}")
+async def delete_word(word_id: str) -> dict[str, Any]:
+    state = get_state()
+    if not state.study.delete_word(word_id):
+        raise HTTPException(404, "word not found")
+    await _study_changed(state)
+    return {"ok": True}
+
+
+@app.delete("/api/vocabulary")
+async def clear_vocabulary() -> dict[str, Any]:
+    state = get_state()
+    state.study.clear_vocabulary()
+    await _study_changed(state)
+    return {"ok": True}
+
+
 @app.get("/api/debug")
 async def debug() -> dict[str, Any]:
     return get_state().debug_snapshot()
@@ -479,6 +583,7 @@ async def export() -> JSONResponse:
         "exported_at": time.time(),
         "settings": settings_for_client(state.settings.all()),
         "history": state.conversation.snapshot(),
+        "study": state.study.snapshot(),
     }
     return JSONResponse(
         data,
@@ -499,6 +604,9 @@ async def import_data(data: dict[str, Any] = Body(...)) -> dict[str, Any]:
         state.conversation.user_name = str(hist.get("user_name") or "")
         state.conversation.save()
         await state.hub.broadcast({"type": "history_replaced", "history": state.conversation.snapshot()})
+    if "study" in data and isinstance(data["study"], dict):
+        state.study.replace(data["study"])
+        await _study_changed(state)
     LOG.info("Imported data")
     return {"ok": True}
 

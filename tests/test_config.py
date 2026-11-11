@@ -70,6 +70,73 @@ def test_face_separation_is_sanitized():
         assert sanitize(settings)["face"]["separation"] == mode
 
 
+def test_experience_defaults():
+    assert DEFAULTS["experience"] == {
+        "mode": "conversation",
+        "study_pages": 3,
+        "study_max_tokens": 600,
+        "study_page_chars": 380,
+        "notes_font": "sans",
+        "notes_font_size": 15,
+        "notes_ink": "#2b2118",
+        "notes_color": "amber",
+    }
+
+
+def test_experience_is_sanitized():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"] = {
+        "mode": "nonsense",
+        "study_pages": 99,
+        "study_max_tokens": 9999,
+        "study_page_chars": 1,
+    }
+    clean = sanitize(settings)["experience"]
+    assert clean["mode"] == "conversation"
+    assert clean["study_pages"] == 6
+    assert clean["study_max_tokens"] == 1200
+    assert clean["study_page_chars"] == 220
+
+    settings["experience"] = {
+        "mode": "study",
+        "study_pages": 0,
+        "study_max_tokens": 1,
+        "study_page_chars": 9999,
+    }
+    clean = sanitize(settings)["experience"]
+    assert clean["mode"] == "study"
+    assert clean["study_pages"] == 2
+    assert clean["study_max_tokens"] == 256
+    assert clean["study_page_chars"] == 700
+
+
+def test_note_appearance_is_sanitized():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"].update({
+        "notes_font": "nonsense",
+        "notes_font_size": 99,
+        "notes_ink": "not-a-colour",
+        "notes_color": "nonsense",
+    })
+    clean = sanitize(settings)["experience"]
+    assert clean["notes_font"] == "sans"
+    assert clean["notes_font_size"] == 22
+    assert clean["notes_ink"] == "#2b2118"
+    assert clean["notes_color"] == "amber"
+
+    settings["experience"].update({
+        "notes_font": "serif",
+        "notes_font_size": 1,
+        "notes_ink": "#112233",
+        "notes_color": "rose",
+    })
+    clean = sanitize(settings)["experience"]
+    assert clean["notes_font"] == "serif"
+    assert clean["notes_font_size"] == 12
+    assert clean["notes_ink"] == "#112233"
+    assert clean["notes_color"] == "rose"
+
+
 def test_old_minimal_face_style_migrates_to_original():
     settings = copy.deepcopy(DEFAULTS)
     settings["face"]["style"] = "minimal"

@@ -70,3 +70,66 @@ def test_proactive_instruction():
     text = proactive_instruction(copy.deepcopy(DEFAULTS), 120)
     assert "quiet" in text
     assert "one" in text.lower()
+
+
+def test_study_prompt_adds_page_protocol():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["mode"] = "study"
+    prompt = build_system_prompt(settings)
+    assert "[[page]]" in prompt
+    assert "2-3 short pages" in prompt
+    assert "check-for-understanding" in prompt
+    assert "study mode" in prompt.lower()
+    assert "EMOTION TAGS" in prompt
+    # The short-reply verbosity instruction must not fight the page rules.
+    assert "Never write more than three sentences" not in prompt
+
+
+def test_conversation_prompt_has_no_page_protocol():
+    prompt = build_system_prompt(copy.deepcopy(DEFAULTS))
+    assert "[[page]]" not in prompt
+    assert "Never write more than three sentences" in prompt
+
+
+def test_non_chat_study_prompt_stays_short():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["mode"] = "study"
+    prompt = build_system_prompt(settings, study=False)
+    assert "[[page]]" not in prompt
+    assert "Never write more than three sentences" in prompt
+
+
+def test_study_notes_are_injected_only_in_study_mode():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["mode"] = "study"
+    prompt = build_system_prompt(
+        settings,
+        study_notes=["Always answer in English.", "Use examples."],
+    )
+    assert "Notes on the user's screen" in prompt
+    assert "Always answer in English." in prompt
+    assert "Use examples." in prompt
+
+    conversation = build_system_prompt(
+        copy.deepcopy(DEFAULTS),
+        study_notes=["Always answer in English."],
+    )
+    assert "Notes on the user's screen" not in conversation
+
+    short = build_system_prompt(
+        settings,
+        study=False,
+        study_notes=["Always answer in English."],
+    )
+    assert "Notes on the user's screen" not in short
+
+
+def test_study_notes_are_bounded():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["mode"] = "study"
+    notes = [f"rule {index} " + ("x" * 400) for index in range(12)]
+    prompt = build_system_prompt(settings, study_notes=notes)
+    assert "rule 0" in prompt
+    assert "rule 7" in prompt
+    assert "rule 8" not in prompt
+    assert len(prompt) < 7000
