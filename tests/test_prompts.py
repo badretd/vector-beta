@@ -133,3 +133,17 @@ def test_study_notes_are_bounded():
     assert "rule 7" in prompt
     assert "rule 8" not in prompt
     assert len(prompt) < 7000
+
+
+def test_study_actions_only_when_enabled():
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["mode"] = "study"
+    disabled = build_system_prompt(settings)
+    assert "[[note:" not in disabled
+    assert "[[word:" not in disabled
+
+    settings["experience"]["agent_write"] = True
+    enabled = build_system_prompt(settings)
+    assert "[[note: short text]]" in enabled
+    assert "[[word: term | meaning | example | language]]" in enabled
+    assert "never mention them" in enabled

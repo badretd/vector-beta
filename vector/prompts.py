@@ -50,11 +50,23 @@ _STUDY_STYLE = (
 
 _LANGUAGE_RULE = "LANGUAGE: {language}\n"
 
+_ACTION_RULES = (
+    "ACTIONS: When the user asks you to remember a note, write a line exactly like "
+    "[[note: short text]]. When the user asks you to save a word or phrase, write a line "
+    "exactly like [[word: term | meaning | example | language]]. Example: "
+    "[[note: The user likes tea.]] or [[word: ephemeral | lasting a short time | The glow faded. | en]]. "
+    "These action lines are invisible to the user; never mention them. Use at most one "
+    "action per request, and keep note text short.\n"
+)
+
 
 def _style_rules(settings: dict[str, Any], *, study: bool) -> str:
+    experience = settings.get("experience", {})
     style = _STUDY_STYLE.format(
-        pages=int(settings.get("experience", {}).get("study_pages", 3))
+        pages=int(experience.get("study_pages", 3))
     ) if study else _CONVERSATION_STYLE
+    if study and experience.get("agent_write"):
+        style += _ACTION_RULES
     return (
         _EMOTION_RULES.format(tags=emotion_tag_help())
         + style

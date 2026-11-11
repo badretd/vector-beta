@@ -154,6 +154,8 @@ DEFAULTS: dict[str, Any] = {
         "notes_font_size": 15,
         "notes_ink": "#2b2118",
         "notes_color": "amber",
+        "agent_write": False,
+        "agent_read_notes": False,
     },
     "engagement": {
         "proactive": True,
@@ -329,6 +331,8 @@ def sanitize(settings: dict[str, Any]) -> dict[str, Any]:
         if notes_color not in NOTE_COLORS:
             notes_color = "amber"
         experience["notes_color"] = notes_color
+        experience["agent_write"] = bool(experience.get("agent_write", False))
+        experience["agent_read_notes"] = bool(experience.get("agent_read_notes", False))
         s["experience"] = experience
 
         s["engagement"]["idle_min_seconds"] = int(_clamp(int(s["engagement"]["idle_min_seconds"]), 20, 3600))

@@ -1,6 +1,6 @@
 # Vector Development Plan
 
-**Status:** Milestone 4 complete. Ready for final review and commit.
+**Status:** Milestone 4 complete; post-M4 companion actions and pagination fix added.
 **Last updated:** 2026-11-11
 **Purpose:** source of truth for the remaining phases, approved decisions, and handoff context between development sessions.
 
@@ -515,13 +515,15 @@ M3:
   "study_page_chars": 380
 }
 ```
-M4 notes font:
+M4 notes font and companion permissions:
 ```json
 "experience": {
   "notes_font": "sans",
   "notes_font_size": 15,
   "notes_ink": "#...",
-  "notes_color": "amber"
+  "notes_color": "amber",
+  "agent_write": false,
+  "agent_read_notes": false
 }
 ```
 
@@ -610,3 +612,47 @@ All planned milestones are complete. Run the full checks one last time, review t
 - Study mode defaults to 3 pages on the user’s CPU-only machine.
 - The model warning is informational, not a hard block.
 - The Face Lab is the primary visual verification tool; no separate screenshot-test infrastructure is planned.
+
+---
+
+## 13. Post-M4 — Companion study actions and pagination
+
+### Goal
+Let the companion create notes and vocabulary on request, with explicit permissions, and keep long replies inside the paginated card instead of showing an inner scrollbar.
+
+### Settings
+- `experience.agent_write` (default `false`): allows the companion to create notes and vocabulary.
+- `experience.agent_read_notes` (default `false`): allows shared notes to be sent to the study prompt.
+
+### Protocol
+- Study prompt gains an `ACTIONS` block only when `agent_write` is enabled.
+- Note action: `[[note: short text]]`.
+- Word action: `[[word: term | meaning | example | language]]`.
+- `StudyCommandParser` removes action lines from the visible stream and buffers partial markers.
+- Actions are applied after generation, capped at four per reply, with exact-text/term de-duplication.
+- Companion-created notes default to visual-only (`share: false`) and are placed in a free spot.
+- Companion-created words get `source: "companion"`.
+
+### Permissions and UI
+- Settings → Study has two toggles under **Companion permissions**.
+- Note reading is off by default; the per-note check button only matters when reading is allowed.
+- The old pin icon on notes is replaced with a check icon.
+- Notes created by the companion arrive through the existing `study_changed` broadcast.
+
+### Pagination
+- The backend keeps the original answer text for history instead of joining fallback pages with blank lines.
+- The frontend repaginates study replies against the rendered reply height, preferring sentence and word boundaries.
+- Repagination runs after `assistant_end`, on window resize, and when settings change.
+- Pages never end mid-word in the visible card, and the reply block no longer shows an inner scrollbar for a normal long answer.
+- The client may create more visual pages than `study_pages` when a single model page is too tall; the setting remains guidance for generated page breaks.
+
+### Verification
+- `pytest -q` → 89 passed, 1 skipped.
+- `node --check` passes for all frontend modules.
+- `git diff --check` clean.
+- Manual checks:
+  - companion-created note and word appear, action tags stay hidden;
+  - write actions are ignored when disabled;
+  - shared notes appear in the prompt only when reading is enabled;
+  - long answers paginate at 1200 px and 480 px with no inner scrollbar;
+  - history stores the clean continuous answer.

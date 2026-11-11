@@ -80,6 +80,8 @@ def test_experience_defaults():
         "notes_font_size": 15,
         "notes_ink": "#2b2118",
         "notes_color": "amber",
+        "agent_write": False,
+        "agent_read_notes": False,
     }
 
 
@@ -135,6 +137,22 @@ def test_note_appearance_is_sanitized():
     assert clean["notes_font_size"] == 12
     assert clean["notes_ink"] == "#112233"
     assert clean["notes_color"] == "rose"
+
+
+def test_agent_study_permissions_are_boolean_and_off_by_default():
+    assert DEFAULTS["experience"]["agent_write"] is False
+    assert DEFAULTS["experience"]["agent_read_notes"] is False
+    settings = copy.deepcopy(DEFAULTS)
+    settings["experience"]["agent_write"] = "yes"
+    settings["experience"]["agent_read_notes"] = 1
+    clean = sanitize(settings)["experience"]
+    assert clean["agent_write"] is True
+    assert clean["agent_read_notes"] is True
+    settings["experience"]["agent_write"] = 0
+    settings["experience"]["agent_read_notes"] = ""
+    clean = sanitize(settings)["experience"]
+    assert clean["agent_write"] is False
+    assert clean["agent_read_notes"] is False
 
 
 def test_old_minimal_face_style_migrates_to_original():

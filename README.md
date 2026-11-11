@@ -273,7 +273,7 @@ Every score and reason is visible in the debug console.
 
 ## Conversation and Study modes
 
-Vector has two experience modes. **Conversation** is the default and keeps the original short, one-line replies. **Study** lets the model answer in depth and splits the answer across a single paginated reply card: `‹ 1 / 3 ›`, dots, and `Left`/`Right` to turn pages. New pages never yank you away from what you are reading; a small “new page” indicator appears instead.
+Vector has two experience modes. **Conversation** is the default and keeps the original short, one-line replies. **Study** lets the model answer in depth and splits the answer across a single paginated reply card: `‹ 1 / 3 ›`, dots, and `Left`/`Right` to turn pages. Long answers are reflowed to fit the card, so each page stays readable without an inner scrollbar. New pages never yank you away from what you are reading; a small “new page” indicator appears instead.
 
 Study answers are stored in the shared history with a `study` chip. You can copy the current page or the whole answer from the reply card.
 
@@ -289,11 +289,13 @@ Study mode adds a small book-icon menu in the top-right. It opens four actions: 
 
 Sticky notes are draggable paper cards over the stage. Type directly into a note, drag it by its dotted header, and use the header buttons to:
 
-- pin it as a **rule** for the companion,
+- mark it as a **rule** for the companion with the check button,
 - cycle its colour,
 - delete it.
 
-Shared notes are sent to the model as “notes on the screen” with strict caps (8 notes × 300 characters). Visual notes stay local to the screen. The note font, text size, text colour, and default note colour are in **Settings → Study**, along with one-click rule templates for “Answer in English”, “Use examples”, and “Keep it short”.
+The companion can add a note or save a word when you ask, but only when **Settings → Study → Companion can add notes and words** is enabled. It does this with invisible action tags, so the reply itself stays clean.
+
+Note reading is **off by default**. Shared notes are sent to the model as “notes on the screen” with strict caps (8 notes × 300 characters) only after you enable **Companion can read shared notes**. The check button on a note marks it as a rule; it takes effect only when reading is allowed. Visual notes stay local to the screen. The note font, text size, text colour, and default note colour are in **Settings → Study**, along with one-click rule templates for “Answer in English”, “Use examples”, and “Keep it short”.
 
 The vocabulary drawer stores words and phrases with an optional meaning, example, and language. Select text in a study reply, open the book menu, and choose **Add word** to prefill the term. The list supports search, edit, delete, and JSON/CSV export. Notes and words live in `data/study.json` and are included in the normal export/import.
 
@@ -348,7 +350,7 @@ Everything lives in `data/settings.json` and saves automatically.
 - **Voice** — interface language, Whisper model, recognition language, microphone, silence before send, mic sensitivity, live partials.
 - **Character** — character pack, custom pack fields, room theme, face palette, size, smart separation, pointer following, blink, breathing, particles, antenna, reduced motion, colors, face lab.
 - **Companion** — experience mode (Conversation / Study), name override, reply language, reply length, listening mode, idle nudges, mood, memory facts.
-- **Study** — pages per answer, study reply tokens, fallback page size, note font/size/colour, vocabulary access, and the model warning. This tab appears only in Study mode.
+- **Study** — companion permissions (add notes/words, read shared notes), pages per answer, study reply tokens, fallback page size, note font/size/colour, vocabulary access, and the model warning. This tab appears only in Study mode.
 - **Advanced** — Ollama URL and model, temperature, context, max tokens, ASR device/precision, log level, offline demo, import/export/reset.
 
 Themes are **Mono** (default), **Mint**, and **Paper**. The face palette is independent, so you can put a white face in a mint room or a dark face in a paper room.

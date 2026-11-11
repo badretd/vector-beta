@@ -570,6 +570,18 @@ export class SettingsUI {
   }
 
   renderStudy() {
+    this.el.body.appendChild(el("div", "section-title", this.app.i18n.t("settings.study.permissions")));
+    this.el.body.appendChild(this.field(
+      "settings.study.agentWrite",
+      this.toggle("experience.agent_write"),
+      "settings.study.agentWriteHint",
+    ));
+    this.el.body.appendChild(this.field(
+      "settings.study.agentReadNotes",
+      this.toggle("experience.agent_read_notes"),
+      "settings.study.agentReadNotesHint",
+    ));
+
     this.el.body.appendChild(this.field(
       "settings.study.pages",
       this.range("experience.study_pages", 2, 6, 1, (v) => String(v)),

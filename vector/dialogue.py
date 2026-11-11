@@ -170,11 +170,100 @@ class PageSplitter:
                 best = match.end()
         if best:
             return best
-        # Fall back to the last whitespace, then to a hard cut.
+        # Fall back to the last whitespace, then to a hard cut. Whitespace is
+        # allowed even in a short window so a page never ends mid-word.
         space = window.rfind(" ")
-        if space >= floor:
+        if space > 0:
             return space + 1
         return max(1, room)
+
+
+# --------------------------------------------------------------------------
+# Companion study actions
+# --------------------------------------------------------------------------
+
+STUDY_COMMAND_PREFIXES = ("[[note:", "[[word:")
+
+
+class StudyCommandParser:
+    """Remove ``[[note: ...]]`` / ``[[word: ...]]`` actions from the stream.
+
+    Small local models cannot call tools, so the study prompt asks them to emit
+    an invisible action line. The parser keeps partial markers buffered so they
+    never flash in the reply, and returns the clean text plus parsed actions.
+    """
+
+    def __init__(self, *, enabled: bool = True, max_pending: int = 500) -> None:
+        self.enabled = bool(enabled)
+        self.max_pending = max(80, int(max_pending))
+        self._pending = ""
+
+    def feed(self, chunk: str) -> tuple[str, list[tuple[str, str]]]:
+        if not self.enabled:
+            return chunk, []
+        self._pending += chunk
+        text_out: list[str] = []
+        commands: list[tuple[str, str]] = []
+        while True:
+            start = self._pending.find("[[")
+            if start == -1:
+                if self._pending.endswith("["):
+                    text_out.append(self._pending[:-1])
+                    self._pending = "["
+                else:
+                    text_out.append(self._pending)
+                    self._pending = ""
+                break
+            if start > 0:
+                text_out.append(self._pending[:start])
+                self._pending = self._pending[start:]
+
+            end = self._pending.find("]]", 2)
+            if end == -1:
+                if len(self._pending) <= self.max_pending:
+                    break
+                # Too long for an action; let it stream as ordinary text.
+                text_out.append(self._pending[0])
+                self._pending = self._pending[1:]
+                continue
+
+            raw = self._pending[2:end].strip()
+            command = self._parse(raw)
+            if command:
+                commands.append(command)
+                self._pending = self._pending[end + 2 :]
+                continue
+
+            # Not an action (for example [[page]]). Keep the first bracket and
+            # rescan the rest so the page splitter can still see the sentinel.
+            text_out.append(self._pending[0])
+            self._pending = self._pending[1:]
+        return "".join(text_out), commands
+
+    def flush(self) -> tuple[str, list[tuple[str, str]]]:
+        if not self.enabled:
+            text = self._pending
+            self._pending = ""
+            return text, []
+        pending = self._pending
+        self._pending = ""
+        if self._looks_like_action(pending):
+            return "", []
+        return pending, []
+
+    def _parse(self, raw: str) -> tuple[str, str] | None:
+        if raw.startswith("note:"):
+            text = raw[5:].strip()
+            return ("note", text) if text else None
+        if raw.startswith("word:"):
+            payload = raw[5:].strip()
+            return ("word", payload) if payload else None
+        return None
+
+    def _looks_like_action(self, text: str) -> bool:
+        if not text.startswith("[["):
+            return False
+        return any(prefix.startswith(text) or text.startswith(prefix) for prefix in STUDY_COMMAND_PREFIXES)
 
 
 # --------------------------------------------------------------------------
@@ -797,6 +886,55 @@ class TurnManager:
             self._save()
             asyncio.create_task(self._emit_memory())
 
+    def _apply_study_commands(self, commands: list[tuple[str, str]]) -> int:
+        """Apply invisible study actions from the model, with light de-duplication."""
+        if self.study_store is None:
+            return 0
+        snapshot = self.study_store.snapshot()
+        note_texts = {
+            str(note.get("text") or "").strip().lower()
+            for note in snapshot.get("notes", [])
+        }
+        word_terms = {
+            str(word.get("term") or "").strip().lower()
+            for word in snapshot.get("vocabulary", [])
+        }
+        added = 0
+        note_count = len(snapshot.get("notes", []))
+        for kind, payload in commands[:4]:
+            if kind == "note":
+                text = str(payload or "").strip()[:2000]
+                key = text.lower()
+                if not text or key in note_texts:
+                    continue
+                x = 6 if note_count % 2 == 0 else 62
+                y = 16 + (note_count % 4) * 10
+                self.study_store.add_note({"text": text, "share": False, "x": x, "y": y})
+                note_texts.add(key)
+                note_count += 1
+                added += 1
+            elif kind == "word":
+                parts = [part.strip() for part in str(payload or "").split("|")]
+                term = (parts[0] if parts else "")[:80]
+                key = term.lower()
+                if not term or key in word_terms:
+                    continue
+                word = self.study_store.add_word(
+                    {
+                        "term": term,
+                        "meaning": parts[1] if len(parts) > 1 else "",
+                        "example": parts[2] if len(parts) > 2 else "",
+                        "language": parts[3] if len(parts) > 3 else "",
+                        "source": "companion",
+                    }
+                )
+                if word is not None:
+                    word_terms.add(key)
+                    added += 1
+        if added:
+            self.log("info", "Companion added %d study item(s)", added)
+        return added
+
     def _messages_for_prompt(self, instruction: str = "", *, kind: str = "chat") -> list[dict[str, str]]:
         s = self.settings
         turns = int(s.get("llm", {}).get("history_turns", 10))
@@ -809,6 +947,7 @@ class TurnManager:
             self.study_store is not None
             and kind in ("chat", "study")
             and s.get("experience", {}).get("mode") == "study"
+            and s.get("experience", {}).get("agent_read_notes", False)
         ):
             study_notes = self.study_store.shared_notes()
         system = build_system_prompt(
@@ -848,11 +987,18 @@ class TurnManager:
         parser = EmotionStreamParser()
         is_study = kind == "study"
         experience = self.settings.get("experience", {})
+        agent_write = bool(experience.get("agent_write", False))
+        command_parser = StudyCommandParser(
+            enabled=is_study,
+            max_pending=2100 if agent_write else 500,
+        )
+        commands: list[tuple[str, str]] = []
         splitter = PageSplitter(
             enabled=is_study,
             max_pages=int(experience.get("study_pages", 3)),
             page_chars=int(experience.get("study_page_chars", 380)),
         )
+        raw_text_parts: list[str] = []
         full_text = ""
         emotions: list[str] = []
         current_emotion = "neutral"
@@ -897,6 +1043,8 @@ class TurnManager:
 
             async def feed_text(text: str) -> None:
                 nonlocal delta_buffer, delta_page
+                if text:
+                    raw_text_parts.append(text)
                 for page, piece in splitter.feed(text):
                     if not piece:
                         continue
@@ -931,10 +1079,20 @@ class TurnManager:
                     else:
                         text = value or ""
                         if text:
-                            await feed_text(text)
+                            clean, found = command_parser.feed(text)
+                            commands.extend(found)
+                            if clean:
+                                await feed_text(clean)
             for ev_kind, value in parser.flush():
                 if ev_kind == "text" and value:
-                    await feed_text(value)
+                    clean, found = command_parser.feed(value)
+                    commands.extend(found)
+                    if clean:
+                        await feed_text(clean)
+            clean, found = command_parser.flush()
+            commands.extend(found)
+            if clean:
+                await feed_text(clean)
             await flush_delta()
             if cancel.is_set():
                 return
@@ -942,11 +1100,11 @@ class TurnManager:
             pages = [re.sub(r"[ \t]+", " ", page).strip() for page in pages]
             while len(pages) > 1 and not pages[-1]:
                 pages.pop()
-            full_text = (
-                "\n\n".join(page for page in pages if page)
-                if is_study
-                else (pages[0] if pages else "")
-            )
+            # Keep the original answer intact for history and client-side
+            # repagination. The page list is only a display hint; joining it
+            # would preserve any mid-word fallback cut as a paragraph break.
+            full_text = "".join(raw_text_parts).replace(PAGE_SENTINEL, "\n\n")
+            full_text = re.sub(r"[ \t]+", " ", full_text)
             full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
             if not full_text:
                 lang = "ru" if self.settings.get("app", {}).get("language") == "ru" else "en"
@@ -969,6 +1127,12 @@ class TurnManager:
                     )
             if is_study and (not pages or not any(page.strip() for page in pages)):
                 pages = [full_text]
+            if is_study and agent_write and commands and self.study_store is not None:
+                added = self._apply_study_commands(commands)
+                if added:
+                    await self.broadcast(
+                        {"type": "study_changed", "study": self.study_store.snapshot()}
+                    )
             if not emotions:
                 inferred = infer_emotion(full_text)
                 emotions = [inferred]

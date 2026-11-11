@@ -4,7 +4,8 @@ import copy
 import pytest
 
 from vector.config import DEFAULTS, SettingsStore
-from vector.dialogue import ConversationStore, PageSplitter, TurnManager
+from vector.dialogue import ConversationStore, PageSplitter, StudyCommandParser, TurnManager
+from vector.study import StudyStore
 from vector.study import StudyStore
 
 
@@ -46,7 +47,7 @@ class StudyFakeLLM(FakeLLM):
             await asyncio.sleep(0)
 
 
-def make_turn(tmp_path, mode="silence", llm=None, settings_patch=None):
+def make_turn(tmp_path, mode="silence", llm=None, settings_patch=None, study=None):
     settings = SettingsStore(tmp_path / "settings.json")
     settings.update({"input": {"mode": mode}, "engagement": {"proactive": False}})
     if settings_patch:
@@ -63,6 +64,7 @@ def make_turn(tmp_path, mode="silence", llm=None, settings_patch=None):
         llm=llm,
         conversation=conversation,
         broadcast=broadcast,
+        study=study,
     )
     return turn, llm, conversation, events
 
@@ -78,7 +80,7 @@ async def wait_idle(turn, timeout=2.0):
 def test_study_notes_reach_the_prompt(tmp_path):
     turn, _llm, _conversation, _events = make_turn(
         tmp_path,
-        settings_patch={"experience": {"mode": "study"}},
+        settings_patch={"experience": {"mode": "study", "agent_read_notes": True}},
     )
     study = StudyStore(tmp_path / "study.json")
     study.add_note({"text": "Answer in English.", "share": True})
@@ -296,6 +298,8 @@ def test_study_fallback_creates_pages_without_sentinel(tmp_path):
         assert reply["meta"]["page_count"] > 1
         assert len(reply["meta"]["pages"]) == reply["meta"]["page_count"]
         assert all(len(page) <= 240 for page in reply["meta"]["pages"][:-1])
+        # A fallback page break must not become a paragraph break in history.
+        assert "\n\n" not in reply["text"]
         await turn.close()
 
     asyncio.run(run())
@@ -317,5 +321,126 @@ def test_poke_in_study_mode_keeps_short_prompt(tmp_path):
         assert "Keep replies short" in system
         assert conversation.messages[-1]["kind"] == "poke"
         await turn.close()
+
+    asyncio.run(run())
+
+
+class ActionFakeLLM(FakeLLM):
+    async def chat_stream(self, messages, *, cancel=None, options=None):
+        self.calls += 1
+        self.options.append(dict(options or {}))
+        for chunk in [
+            "[happy] I saved that. ",
+            "[[note: Always answer in English.]]",
+            " [[word: ephemeral | lasting a short time | The glow faded. | en]]",
+        ]:
+            if cancel is not None and cancel.is_set():
+                return
+            yield chunk
+            await asyncio.sleep(0)
+
+
+def test_study_command_parser_extracts_and_hides_actions():
+    parser = StudyCommandParser()
+    text, commands = parser.feed("Hello [[note: remember this")
+    assert text == "Hello "
+    assert commands == []
+    text2, commands2 = parser.feed("]] world [[word: word | meaning]]")
+    assert text2 == " world "
+    assert commands2 == [
+        ("note", "remember this"),
+        ("word", "word | meaning"),
+    ]
+    tail, tail_commands = parser.flush()
+    assert tail == ""
+    assert tail_commands == []
+
+
+def test_study_command_parser_drops_partial_action():
+    parser = StudyCommandParser()
+    text, commands = parser.feed("Hello [[note: unfinished")
+    assert text == "Hello "
+    assert commands == []
+    tail, tail_commands = parser.flush()
+    assert tail == ""
+    assert tail_commands == []
+
+
+def test_companion_can_add_notes_and_words_when_enabled(tmp_path):
+    async def run():
+        study = StudyStore(tmp_path / "study.json")
+        turn, llm, conversation, events = make_turn(
+            tmp_path,
+            "silence",
+            llm=ActionFakeLLM(),
+            settings_patch={"experience": {"mode": "study", "agent_write": True}},
+            study=study,
+        )
+        await turn.handle_text("Please remember this and save that word")
+        await wait_idle(turn)
+        reply = conversation.messages[1]
+        assert "[[note:" not in reply["text"]
+        assert "[[word:" not in reply["text"]
+        assert "I saved that." in reply["text"]
+        assert [note["text"] for note in study.notes] == ["Always answer in English."]
+        assert study.vocabulary[0]["term"] == "ephemeral"
+        assert study.vocabulary[0]["source"] == "companion"
+        assert any(event["type"] == "study_changed" for event in events)
+        await turn.close()
+
+    asyncio.run(run())
+
+
+def test_companion_actions_are_ignored_when_disabled(tmp_path):
+    async def run():
+        study = StudyStore(tmp_path / "study.json")
+        turn, llm, conversation, events = make_turn(
+            tmp_path,
+            "silence",
+            llm=ActionFakeLLM(),
+            settings_patch={"experience": {"mode": "study", "agent_write": False}},
+            study=study,
+        )
+        await turn.handle_text("Please remember this")
+        await wait_idle(turn)
+        reply = conversation.messages[1]
+        assert "[[note:" not in reply["text"]
+        assert "[[word:" not in reply["text"]
+        assert study.notes == []
+        assert study.vocabulary == []
+        await turn.close()
+
+    asyncio.run(run())
+
+
+def test_shared_notes_are_only_read_when_permitted(tmp_path):
+    async def run():
+        study = StudyStore(tmp_path / "study.json")
+        study.add_note({"text": "Always answer in English.", "share": True})
+        llm = CapturingLLM()
+        turn, _, _, _ = make_turn(
+            tmp_path,
+            "silence",
+            llm=llm,
+            settings_patch={"experience": {"mode": "study", "agent_read_notes": False}},
+            study=study,
+        )
+        await turn.handle_text("Hello")
+        await wait_idle(turn)
+        assert "Always answer in English." not in llm.messages[0][0]["content"]
+        await turn.close()
+
+        llm2 = CapturingLLM()
+        turn2, _, _, _ = make_turn(
+            tmp_path / "second",
+            "silence",
+            llm=llm2,
+            settings_patch={"experience": {"mode": "study", "agent_read_notes": True}},
+            study=study,
+        )
+        await turn2.handle_text("Hello")
+        await wait_idle(turn2)
+        assert "Always answer in English." in llm2.messages[0][0]["content"]
+        await turn2.close()
 
     asyncio.run(run())

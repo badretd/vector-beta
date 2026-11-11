@@ -141,6 +141,8 @@ let vocabOpen = false;
 let studyMenuOpen = false;
 const noteSaveTimers = new Map();
 let noteResizeTimer = 0;
+let replyMeasure = null;
+let replyRepaginateTimer = 0;
 let idleTimer = 0;
 let hintTimer = 0;
 let replyRaf = 0;
@@ -335,6 +337,7 @@ function applySettings(settings, options = {}) {
   if (dom.input) dom.input.placeholder = i18n.t("stage.placeholder", { name: companionName() });
   updateMicButton();
   setGlow(app.currentEmotion);
+  if (!dom.reply.hidden) scheduleReplyRepaginate();
 
   if (settings.app.language && settings.app.language !== i18n.locale) {
     localStorage.setItem("vector.locale", settings.app.language);
@@ -592,7 +595,7 @@ function setReplyPages(pages, fallbackText = "", kind = "chat") {
   app.replyPage = clamp(app.replyPage, 0, list.length - 1);
   app.replySeenPage = Math.min(app.replySeenPage, list.length - 1);
   app.replyNewPage = list.length - 1 > app.replySeenPage;
-  app.replyText = list.join("\n\n").trim();
+  app.replyText = String(fallbackText || "").trim() || list.join("\n\n").trim();
   app.replyDirty = true;
   renderReplyNow();
 }
@@ -605,6 +608,111 @@ async function copyReply(text) {
   } catch (error) {
     toast(i18n.t("toast.error"), "error");
   }
+}
+
+function replyMeasureNode() {
+  if (!replyMeasure) {
+    replyMeasure = document.createElement("div");
+    replyMeasure.className = "reply-text reply-measure";
+    dom.reply.appendChild(replyMeasure);
+  }
+  return replyMeasure;
+}
+
+function replyPageMaxHeight() {
+  const maxHeight = parseFloat(getComputedStyle(dom.replyText).maxHeight);
+  if (Number.isFinite(maxHeight) && maxHeight > 0) return Math.max(80, maxHeight - 2);
+  return Math.max(80, dom.replyText.clientHeight);
+}
+
+function measureReplyHeight(text, width) {
+  const measure = replyMeasureNode();
+  measure.style.width = `${width}px`;
+  measure.textContent = text;
+  return measure.scrollHeight;
+}
+
+function replyAtoms(text) {
+  const atoms = [];
+  const paragraphs = String(text || "").split(/\n{2,}/);
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const trimmed = paragraph.trim();
+    if (!trimmed) return;
+    const sentences = trimmed.match(/[^.!?…]+[.!?…]+(?:["')\]]*)|[^.!?…]+$/g) || [trimmed];
+    sentences.forEach((sentence, sentenceIndex) => {
+      const value = sentence.trim();
+      if (!value) return;
+      atoms.push({
+        text: value,
+        sep: sentenceIndex === 0 && paragraphIndex > 0 ? "\n\n" : " ",
+      });
+    });
+  });
+  return atoms;
+}
+
+function paginateReplyText(text) {
+  const source = String(text || "");
+  if (!source || !dom.replyText || dom.reply.hidden) return [source];
+  const maxHeight = replyPageMaxHeight();
+  const width = Math.max(80, dom.replyText.clientWidth - 4);
+  if (!width) return [source];
+  const atoms = replyAtoms(source);
+  if (!atoms.length) return [source];
+
+  const fits = (candidate) => measureReplyHeight(candidate, width) <= maxHeight;
+  const pages = [];
+  let current = "";
+  const push = () => {
+    if (current.trim()) pages.push(current.trim());
+    current = "";
+  };
+
+  for (const atom of atoms) {
+    const candidate = current ? `${current}${atom.sep}${atom.text}` : atom.text;
+    if (fits(candidate)) {
+      current = candidate;
+      continue;
+    }
+    if (current) push();
+    if (fits(atom.text)) {
+      current = atom.text;
+      continue;
+    }
+    // A single sentence is taller than the block: fall back to words.
+    const words = atom.text.split(/\s+/);
+    let part = "";
+    for (const word of words) {
+      const next = part ? `${part} ${word}` : word;
+      if (!part || fits(next)) part = next;
+      else {
+        pages.push(part);
+        part = word;
+      }
+    }
+    current = part;
+  }
+  push();
+  return pages.length ? pages : [source];
+}
+
+function repaginateVisibleReply() {
+  if (dom.reply.hidden || app.generating || app.replyKind !== "study") return;
+  const source = app.replyText || app.replyPages.join("\n\n");
+  if (!source.trim()) return;
+  const pages = paginateReplyText(source);
+  if (
+    pages.length === app.replyPages.length
+    && pages.every((page, index) => page === app.replyPages[index])
+  ) {
+    return;
+  }
+  setReplyPages(pages, source, "study");
+}
+
+function scheduleReplyRepaginate() {
+  clearTimeout(replyRepaginateTimer);
+  replyRepaginateTimer = setTimeout(repaginateVisibleReply, 160);
 }
 
 function submit() {
@@ -990,7 +1098,7 @@ function buildNoteElement(note) {
   share.className = "note-btn" + (note.share ? " active" : "");
   share.title = i18n.t(note.share ? "notes.sharedOn" : "notes.sharedOff");
   share.setAttribute("aria-pressed", String(Boolean(note.share)));
-  share.appendChild(iconNode("i-pin"));
+  share.appendChild(iconNode("i-check"));
   share.addEventListener("click", async (event) => {
     event.stopPropagation();
     note.share = !note.share;
@@ -1524,7 +1632,9 @@ function handleEvent(data) {
       app.replyId = null;
       if (data.message) {
         const pages = data.message.meta?.pages;
-        setReplyPages(pages, data.message.text || "", data.message.kind || app.replyKind);
+        const kind = data.message.kind || app.replyKind;
+        setReplyPages(pages, data.message.text || "", kind);
+        if (kind === "study") repaginateVisibleReply();
         addHistory(data.message);
       }
       app.replyDirty = true;
@@ -2130,6 +2240,7 @@ function bindEvents() {
     noteResizeTimer = setTimeout(() => {
       if (!app._noteEditing && !app._noteDragging) renderNotes();
     }, 200);
+    if (!dom.reply.hidden && app.replyKind === "study") scheduleReplyRepaginate();
   });
   window.addEventListener("resize", () => {
     if (!app._noteEditing && !app._noteDragging) renderNotes();
